@@ -1,4 +1,3 @@
-// com/emptycastle/novery/provider/NovelsOnlineProvider.kt
 package com.emptycastle.novery.provider
 
 import com.emptycastle.novery.R

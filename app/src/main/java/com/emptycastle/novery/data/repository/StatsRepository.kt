@@ -1,5 +1,3 @@
-// com/emptycastle/novery/data/repository/StatsRepository.kt
-
 package com.emptycastle.novery.data.repository
 
 import com.emptycastle.novery.data.local.dao.AggregatedStats

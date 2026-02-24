@@ -1,5 +1,3 @@
-// com/emptycastle/novery/ui/screens/details/components/SelectionModeOverlay.kt
-// Improved visual design while keeping functionality
 package com.emptycastle.novery.ui.screens.details.components
 
 import androidx.compose.animation.AnimatedContent

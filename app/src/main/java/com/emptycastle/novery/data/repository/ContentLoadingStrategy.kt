@@ -1,5 +1,3 @@
-// com/emptycastle/novery/data/repository/ContentLoadingStrategy.kt
-
 package com.emptycastle.novery.data.repository
 
 import com.emptycastle.novery.data.local.dao.OfflineDao

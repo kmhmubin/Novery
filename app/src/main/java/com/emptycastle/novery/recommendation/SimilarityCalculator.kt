@@ -1,4 +1,3 @@
-// com/emptycastle/novery/recommendation/SimilarityCalculator.kt
 package com.emptycastle.novery.recommendation
 
 import com.emptycastle.novery.recommendation.TagNormalizer.TagCategory

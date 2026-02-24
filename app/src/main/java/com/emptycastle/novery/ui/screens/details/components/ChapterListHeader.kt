@@ -1,5 +1,3 @@
-// com/emptycastle/novery/ui/screens/details/components/ChapterListHeader.kt
-// Restored original with minor visual improvements
 package com.emptycastle.novery.ui.screens.details.components
 
 import androidx.compose.animation.AnimatedContent

@@ -1,5 +1,3 @@
-// com/emptycastle/novery/data/cache/CacheManager.kt
-
 package com.emptycastle.novery.data.cache
 
 import android.content.Context

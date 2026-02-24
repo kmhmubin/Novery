@@ -1,4 +1,3 @@
-// com/emptycastle/novery/data/local/Converters.kt
 package com.emptycastle.novery.data.local
 
 import androidx.room.TypeConverter

@@ -1,6 +1,3 @@
-// com/emptycastle/novery/data/repository/RepositoryProvider.kt
-// REPLACE YOUR ENTIRE FILE WITH THIS
-
 package com.emptycastle.novery.data.repository
 
 import android.content.Context

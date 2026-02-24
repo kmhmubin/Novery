@@ -1,5 +1,3 @@
-// com/emptycastle/novery/data/local/dao/NetworkBudgetDao.kt
-
 package com.emptycastle.novery.data.local.dao
 
 import androidx.room.Dao

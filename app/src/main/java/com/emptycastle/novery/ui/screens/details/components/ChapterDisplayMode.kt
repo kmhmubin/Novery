@@ -1,4 +1,3 @@
-// com/emptycastle/novery/ui/screens/details/ChapterDisplayModels.kt
 package com.emptycastle.novery.ui.screens.details
 
 enum class ChapterDisplayMode {

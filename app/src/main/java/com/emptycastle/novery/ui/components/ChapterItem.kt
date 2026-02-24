@@ -1,4 +1,3 @@
-// com/emptycastle/novery/ui/components/ChapterItem.kt
 package com.emptycastle.novery.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi

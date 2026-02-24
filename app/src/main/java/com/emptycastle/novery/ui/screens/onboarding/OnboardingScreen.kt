@@ -1,4 +1,3 @@
-// com/emptycastle/novery/ui/screens/onboarding/OnboardingScreen.kt
 package com.emptycastle.novery.ui.screens.onboarding
 
 import androidx.compose.animation.AnimatedContent

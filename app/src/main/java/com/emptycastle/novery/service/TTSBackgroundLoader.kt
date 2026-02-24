@@ -1,4 +1,3 @@
-// service/TTSBackgroundLoader.kt
 package com.emptycastle.novery.service
 
 import android.content.Context

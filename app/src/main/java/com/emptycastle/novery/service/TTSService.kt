@@ -1,4 +1,3 @@
-// service/TTSService.kt
 package com.emptycastle.novery.service
 
 import android.annotation.SuppressLint

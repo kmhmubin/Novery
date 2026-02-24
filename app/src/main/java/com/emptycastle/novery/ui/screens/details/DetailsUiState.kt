@@ -1,4 +1,3 @@
-// com/emptycastle/novery/ui/screens/details/DetailsUiState.kt
 package com.emptycastle.novery.ui.screens.details
 
 import com.emptycastle.novery.domain.model.Chapter

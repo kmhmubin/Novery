@@ -1,4 +1,3 @@
-// com/emptycastle/novery/domain/model/UserReview.kt
 package com.emptycastle.novery.domain.model
 
 /**

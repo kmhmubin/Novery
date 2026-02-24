@@ -79,15 +79,12 @@ class BrowseViewModel : ViewModel() {
             _uiState.update { it.copy(isLoadingProviders = true, providerError = null) }
 
             try {
+                // Preserve provider ordering from preferences (NovelRepository.getProviders()
+                // already applies the user-defined provider order and disabled list).
                 val providers = novelRepository.getProviders()
-                val favorites = _uiState.value.favoriteProviders
-                val sortedProviders = providers.sortedWith(
-                    compareByDescending<MainProvider> { it.name in favorites }
-                        .thenBy { it.name }
-                )
                 _uiState.update {
                     it.copy(
-                        providers = sortedProviders,
+                        providers = providers,
                         isLoadingProviders = false
                     )
                 }

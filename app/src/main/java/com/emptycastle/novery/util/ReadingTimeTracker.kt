@@ -1,5 +1,3 @@
-// com/emptycastle/novery/util/ReadingTimeTracker.kt
-
 package com.emptycastle.novery.util
 
 import com.emptycastle.novery.data.repository.StatsRepository

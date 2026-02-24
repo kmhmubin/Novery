@@ -1,5 +1,3 @@
-// Update com/emptycastle/novery/recommendation/NovelScorer.kt
-
 package com.emptycastle.novery.recommendation
 
 import com.emptycastle.novery.recommendation.model.NovelVector

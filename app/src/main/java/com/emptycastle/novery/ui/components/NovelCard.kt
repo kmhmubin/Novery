@@ -1,5 +1,3 @@
-// com/emptycastle/novery/ui/components/NovelCard.kt
-
 package com.emptycastle.novery.ui.components
 
 import androidx.compose.animation.AnimatedVisibility

@@ -1,4 +1,3 @@
-// service/TTSServiceManager.kt
 package com.emptycastle.novery.service
 
 import android.content.ComponentName

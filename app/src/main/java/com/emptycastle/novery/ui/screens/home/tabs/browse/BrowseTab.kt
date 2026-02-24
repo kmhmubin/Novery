@@ -362,6 +362,8 @@ fun BrowseTab(
                     isSearchMode -> {
                         SearchResultsContent(
                             providerStates = uiState.filteredProviderStates,
+                            providers = uiState.providers,
+                            favoriteProviders = uiState.favoriteProviders,
                             resultsPerProvider = resultsPerProvider,
                             filters = uiState.filters,
                             isSearching = uiState.isSearching,
@@ -734,6 +736,8 @@ private fun SearchFiltersSheet(
 @Composable
 private fun SearchResultsContent(
     providerStates: Map<String, ProviderSearchState>,
+    providers: List<MainProvider>,
+    favoriteProviders: Set<String>,
     resultsPerProvider: Int,
     filters: SearchFilters,
     isSearching: Boolean,
@@ -776,21 +780,20 @@ private fun SearchResultsContent(
             )
         }
 
-        // Sort providers: loading first, then by results count
-        val sortedProviders = providerStates.entries.sortedWith(
-            compareBy<Map.Entry<String, ProviderSearchState>> { (_, state) ->
-                when (state) {
-                    is ProviderSearchState.Loading -> 0
-                    is ProviderSearchState.Success -> if (state.novels.isNotEmpty()) 1 else 3
-                    is ProviderSearchState.Error -> 2
-                }
-            }.thenByDescending { (_, state) ->
-                when (state) {
-                    is ProviderSearchState.Success -> state.novels.size
-                    else -> 0
-                }
-            }
-        )
+        // Build an ordering that prioritizes favorite providers, and follows
+        // the provider order defined in settings (via `providers` list).
+        val providerOrder = providers.map { it.name }
+        val available = providerStates.keys
+
+        val favoritesInOrder = providerOrder.filter { it in favoriteProviders && it in available }
+        val nonFavoritesInOrder = providerOrder.filter { it !in favoriteProviders && it in available }
+        val remaining = providerStates.keys.filter { it !in providerOrder }
+
+        val orderedNames = favoritesInOrder + nonFavoritesInOrder + remaining
+
+        val sortedProviders = orderedNames.mapNotNull { name ->
+            providerStates[name]?.let { state -> name to state }
+        }
 
         sortedProviders.forEach { (providerName, state) ->
             item(key = "provider_$providerName") {

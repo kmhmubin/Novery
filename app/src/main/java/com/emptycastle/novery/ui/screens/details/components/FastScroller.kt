@@ -1,4 +1,3 @@
-// com/emptycastle/novery/ui/screens/details/components/FastScroller.kt
 package com.emptycastle.novery.ui.screens.details.components
 
 import androidx.compose.animation.AnimatedVisibility

@@ -1,4 +1,3 @@
-// ProviderBrowseUiState.kt
 package com.emptycastle.novery.ui.screens.home.tabs.browse
 
 import com.emptycastle.novery.domain.model.Novel

@@ -1,4 +1,3 @@
-// service/TTSNotifications.kt
 package com.emptycastle.novery.service
 
 import android.Manifest

@@ -1,4 +1,3 @@
-// com/emptycastle/novery/ui/screens/details/components/ChapterItem.kt
 package com.emptycastle.novery.ui.screens.details.components
 
 import androidx.compose.animation.AnimatedContent

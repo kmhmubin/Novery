@@ -1,5 +1,3 @@
-// com/emptycastle/novery/ui/screens/home/tabs/recommendation/components/TagFilterSheet.kt
-
 package com.emptycastle.novery.ui.screens.home.tabs.recommendation.components
 
 import androidx.compose.animation.animateColorAsState
