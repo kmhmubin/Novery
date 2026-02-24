@@ -1,3 +1,5 @@
+<img width="300" height="300" alt="image-removebg-preview" src="https://github.com/user-attachments/assets/e6670700-ff66-4934-a36d-b43442a16442" />
+
 # Novery
 
 <div align="center">
