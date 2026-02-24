@@ -52,7 +52,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.emptycastle.novery.data.repository.RepositoryProvider
 import com.emptycastle.novery.domain.model.ProgressStyle
 import com.emptycastle.novery.domain.model.ReaderSettings
-import com.emptycastle.novery.domain.model.ScrollMode
 import com.emptycastle.novery.domain.model.TapAction
 import com.emptycastle.novery.service.TTSStatus
 import com.emptycastle.novery.tts.VoiceInfo
@@ -61,7 +60,6 @@ import com.emptycastle.novery.ui.components.ReaderBottomBar
 import com.emptycastle.novery.ui.components.TTSPlayer
 import com.emptycastle.novery.ui.components.TTSSettingsPanel
 import com.emptycastle.novery.ui.screens.reader.components.KeepScreenOnEffect
-import com.emptycastle.novery.ui.screens.reader.components.PagedReaderContainer
 import com.emptycastle.novery.ui.screens.reader.components.ReaderContainer
 import com.emptycastle.novery.ui.screens.reader.components.ReaderErrorState
 import com.emptycastle.novery.ui.screens.reader.components.ReaderTopBar
@@ -668,7 +666,6 @@ private fun ReaderScreenContent(
     onConfirmScrollReset: () -> Unit
 ) {
     val tapZones = uiState.settings.tapZones
-    val isContinuousMode = uiState.settings.scrollMode == ScrollMode.CONTINUOUS
 
     // Track if we've completed scroll reset for this content
     var hasCompletedScrollReset by remember(uiState.currentChapterUrl) {
@@ -727,7 +724,7 @@ private fun ReaderScreenContent(
                     .fillMaxSize()
                     .alpha(if (contentVisible) 1f else 0f)
             ) {
-                if (isContinuousMode) {
+                if (true) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -778,18 +775,6 @@ private fun ReaderScreenContent(
                             onRetryChapter = onRetryChapter
                         )
                     }
-                } else {
-                    PagedReaderContainer(
-                        uiState = uiState,
-                        colors = colors,
-                        initialPage = 0,
-                        onPageChanged = { _, _ -> },
-                        onPrevious = onPrevious,
-                        onNext = onNext,
-                        onBack = onBack,
-                        onRetryChapter = onRetryChapter,
-                        onTapCenter = onToggleControls
-                    )
                 }
 
                 // Controls overlay (only interactive when visible)

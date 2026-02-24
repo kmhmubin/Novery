@@ -2007,33 +2007,7 @@ private fun ReadingSettings(
     onSettingsChange: (ReaderSettings) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        // Scroll Mode
-        SettingSection(
-            title = "Scroll Mode",
-            icon = Icons.Default.Swipe,
-            colors = colors
-        ) {
-            ScrollModeSelector(
-                selectedMode = settings.scrollMode,
-                colors = colors,
-                onModeChange = { onSettingsChange(settings.copy(scrollMode = it)) }
-            )
-        }
-
-        // Page Animation (only for paged modes)
-        AnimatedVisibility(visible = settings.scrollMode != ScrollMode.CONTINUOUS) {
-            SettingSection(
-                title = "Page Animation",
-                icon = Icons.Default.Animation,
-                colors = colors
-            ) {
-                PageAnimationSelector(
-                    selectedAnimation = settings.pageAnimation,
-                    colors = colors,
-                    onAnimationChange = { onSettingsChange(settings.copy(pageAnimation = it)) }
-                )
-            }
-        }
+        // NOTE: Paged reader modes removed; always use continuous scroll.
 
         // Reading Direction
         SettingSection(

@@ -1289,16 +1289,7 @@ enum class ScrollMode(
         displayName = "Continuous Scroll",
         description = "Smooth infinite scrolling"
     ),
-    PAGED(
-        id = "paged",
-        displayName = "Paged",
-        description = "Page-by-page reading like a book"
-    ),
-    PAGED_VERTICAL(
-        id = "paged_vertical",
-        displayName = "Vertical Pages",
-        description = "Vertical page transitions"
-    );
+    ;
 
     companion object {
         fun fromId(id: String): ScrollMode =
