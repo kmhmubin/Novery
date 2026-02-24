@@ -1,104 +1,78 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+  <group android:scaleX="0.9"
+      android:scaleY="0.9"
+      android:translateX="5.4"
+      android:translateY="5.4">
 
-    <!-- ══════ BOOK STRUCTURE ══════ -->
+      <!-- 
+        BACKGROUND LAYER 
+        Note: In a true Adaptive Icon setup, this is usually a separate file 
+        (ic_launcher_background.xml). I have included it here so this file 
+        works as a standalone logo. If you have a separate background file, 
+        remove this path.
+      -->
 
-    <!-- Left page -->
-    <path
-        android:pathData="M28,35 Q28,30 33,30 L51,30 L51,75 Q51,78 48,78 L33,78 Q28,78 28,73 Z"
-        android:fillColor="#FFFFFF"
-        android:fillAlpha="0.98"/>
+      <!-- GROUP: Centering and Alignment -->
+      <group>
+          
+          <!-- DROP SHADOW LAYER (For depth) -->
+          <!-- This duplicates the runes slightly offset in black with opacity -->
+          <path
+              android:pathData="
+                  M40,34 V74 
+                  M32,50 L48,64
+                  M70,34 L80,50 L70,62 L60,50 Z
+                  M70,62 L62,74 
+                  M70,62 L78,74"
+              android:strokeColor="#33000000"
+              android:strokeWidth="6"
+              android:strokeLineCap="round"
+              android:strokeLineJoin="round"
+              android:translateX="2"
+              android:translateY="2"/>
 
-    <!-- Right page -->
-    <path
-        android:pathData="M57,30 L75,30 Q80,30 80,35 L80,73 Q80,78 75,78 L60,78 Q57,78 57,75 Z"
-        android:fillColor="#FFFFFF"
-        android:fillAlpha="0.98"/>
+          <!-- 
+             RUNE: ᚾ (Naudhiz) 
+             Coordinates: Left side, centered vertically
+          -->
+          <!-- Vertical Stave -->
+          <path
+              android:pathData="M40,34 V74"
+              android:strokeColor="#FFC107"
+              android:strokeWidth="6"
+              android:strokeLineCap="round"/>
+          
+          <!-- Diagonal Cross (The 'Need' stroke) -->
+          <path
+              android:pathData="M32,50 L48,64"
+              android:strokeColor="#FFC107"
+              android:strokeWidth="6"
+              android:strokeLineCap="round"/>
 
-    <!-- Spine -->
-    <path
-        android:pathData="M51,30 L57,30 L57,78 L51,78 Z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:startX="51"
-                android:startY="54"
-                android:endX="57"
-                android:endY="54"
-                android:type="linear">
-                <item android:color="#FED7AA" android:offset="0.0"/>
-                <item android:color="#FFF7ED" android:offset="0.5"/>
-                <item android:color="#FED7AA" android:offset="1.0"/>
-            </gradient>
-        </aapt:attr>
-    </path>
+          <!-- 
+             RUNE: ᛟ (Othala) 
+             Coordinates: Right side, aligned with Naudhiz
+          -->
+          <!-- The Diamond Loop -->
+          <path
+              android:pathData="M70,34 L80,50 L70,62 L60,50 Z"
+              android:strokeColor="#FFC107"
+              android:strokeWidth="6"
+              android:strokeLineCap="round"
+              android:strokeLineJoin="round"/>
 
-    <!-- Bookmark ribbon -->
-    <path
-        android:pathData="M52,28 L56,28 L56,50 L54,47 L52,50 Z"
-        android:fillColor="#FBBF24"/>
-
-    <!-- Page shine -->
-    <path
-        android:pathData="M33,32 Q38,32 40,34 L40,70 Q38,72 33,72 L33,32 Z"
-        android:fillColor="#FFFFFF"
-        android:fillAlpha="0.2"/>
-
-    <!-- ══════ LEFT PAGE RUNES: ᚾ ᛟ ᚢ ══════ -->
-
-    <!-- ᚾ (Naudhiz / N) — vertical stave + diagonal -->
-    <path
-        android:pathData="M40,34 L40,46 M35,44 L45,36"
-        android:strokeColor="#92400E"
-        android:strokeWidth="2"
-        android:strokeLineCap="round"/>
-
-    <!-- ᛟ (Othala / O) — diamond outline + two legs -->
-    <path
-        android:pathData="M40,48 L45,52 L40,56 L35,52 Z"
-        android:strokeColor="#92400E"
-        android:strokeWidth="2"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:fillColor="#00000000"/>
-    <path
-        android:pathData="M40,56 L36,60 M40,56 L44,60"
-        android:strokeColor="#92400E"
-        android:strokeWidth="2"
-        android:strokeLineCap="round"/>
-
-    <!-- ᚢ (Uruz / U) — angular arch -->
-    <path
-        android:pathData="M36,62 L36,74 M36,62 L44,62 M44,62 L36,74"
-        android:strokeColor="#92400E"
-        android:strokeWidth="2"
-        android:strokeLineCap="round"/>
-
-    <!-- ══════ RIGHT PAGE RUNES: ᛖ ᚱ ᛁ ══════ -->
-
-    <!-- ᛖ (Ehwaz / E) — two staves + crossing diagonals -->
-    <path
-        android:pathData="M64,34 L64,46 M72,34 L72,46 M64,38 L72,42 M64,42 L72,38"
-        android:strokeColor="#92400E"
-        android:strokeWidth="2"
-        android:strokeLineCap="round"/>
-
-    <!-- ᚱ (Raido / R) — stave + angular branch -->
-    <path
-        android:pathData="M64,48 L64,60 M64,48 L72,52 L64,56"
-        android:strokeColor="#92400E"
-        android:strokeWidth="2"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"/>
-
-    <!-- ᛁ (Isa / I) — single stave -->
-    <path
-        android:pathData="M68,62 L68,74"
-        android:strokeColor="#92400E"
-        android:strokeWidth="2"
-        android:strokeLineCap="round"/>
-
+          <!-- The Legs -->
+          <path
+              android:pathData="M70,62 L62,74 M70,62 L78,74"
+              android:strokeColor="#FFC107"
+              android:strokeWidth="6"
+              android:strokeLineCap="round"
+              android:strokeLineJoin="round"/>
+              
+      </group>
+  </group>
 </vector>

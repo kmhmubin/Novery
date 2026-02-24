@@ -17,7 +17,8 @@ data class DownloadedNovel(
     val coverUrl: String?,
     val sourceName: String,
     val downloadedChapters: Int,
-    val totalChapters: Int = 0
+    val totalChapters: Int = 0,
+    val lastDownloadedAt: Long = 0L  // Timestamp of most recent download
 )
 
 data class ActiveDownload(
@@ -33,11 +34,17 @@ data class ActiveDownload(
     val eta: String = ""
 )
 
+enum class DownloadSortOrder {
+    NEWEST_FIRST,
+    OLDEST_FIRST
+}
+
 data class DownloadsUiState(
     val isLoading: Boolean = true,
     val downloadedNovels: List<DownloadedNovel> = emptyList(),
     val activeDownloads: List<ActiveDownload> = emptyList(),
-    val totalStorageUsed: String = "0 MB"
+    val totalStorageUsed: String = "0 MB",
+    val sortOrder: DownloadSortOrder = DownloadSortOrder.NEWEST_FIRST
 )
 
 class DownloadsViewModel : ViewModel() {
@@ -47,6 +54,14 @@ class DownloadsViewModel : ViewModel() {
 
     private val _uiState = MutableStateFlow(DownloadsUiState())
     val uiState: StateFlow<DownloadsUiState> = _uiState.asStateFlow()
+
+    // Track previous download state for detecting completions
+    private var previousActiveNovelUrl: String? = null
+    private var wasDownloadActive: Boolean = false
+    private var previousQueueSize: Int = 0
+
+    // Cache unsorted novels for re-sorting without reloading
+    private var cachedNovels: List<DownloadedNovel> = emptyList()
 
     init {
         observeActiveDownloads()
@@ -63,8 +78,12 @@ class DownloadsViewModel : ViewModel() {
     private fun updateActiveDownloads(downloadState: DownloadState) {
         val activeList = mutableListOf<ActiveDownload>()
 
+        val isCurrentlyActive = downloadState.isActive || downloadState.isPaused
+        val currentNovelUrl = downloadState.novelUrl.takeIf { it.isNotBlank() }
+        val currentQueueSize = downloadState.queuedDownloads.size
+
         // Current download
-        if (downloadState.isActive || downloadState.isPaused) {
+        if (isCurrentlyActive) {
             activeList.add(
                 ActiveDownload(
                     novelUrl = downloadState.novelUrl,
@@ -99,10 +118,32 @@ class DownloadsViewModel : ViewModel() {
 
         _uiState.update { it.copy(activeDownloads = activeList) }
 
-        // Refresh downloaded novels when a download completes
-        if (!downloadState.isActive && !downloadState.isPaused && _uiState.value.downloadedNovels.isEmpty()) {
+        // Detect completion scenarios that require refreshing the downloaded novels list
+        val shouldRefresh = when {
+            // Case 1: Download was active and is now complete (not active, not paused)
+            wasDownloadActive && !isCurrentlyActive && !downloadState.isPaused -> true
+
+            // Case 2: Active novel URL changed (previous download completed, new one started from queue)
+            wasDownloadActive &&
+                    isCurrentlyActive &&
+                    previousActiveNovelUrl != null &&
+                    currentNovelUrl != null &&
+                    currentNovelUrl != previousActiveNovelUrl -> true
+
+            // Case 3: Queue shrunk (a queued item was removed because it started or completed)
+            currentQueueSize < previousQueueSize && wasDownloadActive -> true
+
+            else -> false
+        }
+
+        if (shouldRefresh) {
             loadDownloads()
         }
+
+        // Update tracking state for next comparison
+        previousActiveNovelUrl = currentNovelUrl
+        wasDownloadActive = isCurrentlyActive
+        previousQueueSize = currentQueueSize
     }
 
     fun loadDownloads() {
@@ -110,11 +151,13 @@ class DownloadsViewModel : ViewModel() {
             _uiState.update { it.copy(isLoading = true) }
 
             try {
-                // Get all novels with download counts
-                val downloadCounts = offlineRepository.getAllDownloadCounts()
+                // Get all novels with download counts and last download time
+                val downloadInfo = offlineRepository.getAllDownloadInfo()
 
-                val downloadedNovels = downloadCounts.mapNotNull { (novelUrl, count) ->
-                    if (count <= 0) return@mapNotNull null
+                val downloadedNovels = downloadInfo.mapNotNull { info ->
+                    if (info.chapterCount <= 0) return@mapNotNull null
+
+                    val novelUrl = info.novelUrl
 
                     // Try to get novel details from offline cache first
                     val offlineDetails = offlineRepository.getNovelDetails(novelUrl)
@@ -138,12 +181,17 @@ class DownloadsViewModel : ViewModel() {
                         novelName = novelName,
                         coverUrl = coverUrl,
                         sourceName = sourceName,
-                        downloadedChapters = count
+                        downloadedChapters = info.chapterCount,
+                        lastDownloadedAt = info.lastDownloadedAt
                     )
-                }.sortedByDescending { it.downloadedChapters }
+                }
+
+                // Cache and sort
+                cachedNovels = downloadedNovels
+                val sortedNovels = sortNovels(downloadedNovels, _uiState.value.sortOrder)
 
                 // Calculate approximate storage (rough estimate: ~10KB per chapter average)
-                val totalChapters = downloadCounts.values.sum()
+                val totalChapters = downloadInfo.sumOf { it.chapterCount }
                 val estimatedMB = (totalChapters * 10) / 1024.0
                 val storageString = if (estimatedMB < 1) {
                     "${(estimatedMB * 1024).toInt()} KB"
@@ -154,7 +202,7 @@ class DownloadsViewModel : ViewModel() {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        downloadedNovels = downloadedNovels,
+                        downloadedNovels = sortedNovels,
                         totalStorageUsed = storageString
                     )
                 }
@@ -163,6 +211,32 @@ class DownloadsViewModel : ViewModel() {
                 e.printStackTrace()
                 _uiState.update { it.copy(isLoading = false) }
             }
+        }
+    }
+
+    fun toggleSortOrder() {
+        val newOrder = when (_uiState.value.sortOrder) {
+            DownloadSortOrder.NEWEST_FIRST -> DownloadSortOrder.OLDEST_FIRST
+            DownloadSortOrder.OLDEST_FIRST -> DownloadSortOrder.NEWEST_FIRST
+        }
+
+        val sortedNovels = sortNovels(cachedNovels, newOrder)
+
+        _uiState.update {
+            it.copy(
+                sortOrder = newOrder,
+                downloadedNovels = sortedNovels
+            )
+        }
+    }
+
+    private fun sortNovels(
+        novels: List<DownloadedNovel>,
+        order: DownloadSortOrder
+    ): List<DownloadedNovel> {
+        return when (order) {
+            DownloadSortOrder.NEWEST_FIRST -> novels.sortedByDescending { it.lastDownloadedAt }
+            DownloadSortOrder.OLDEST_FIRST -> novels.sortedBy { it.lastDownloadedAt }
         }
     }
 
@@ -187,6 +261,8 @@ class DownloadsViewModel : ViewModel() {
 
     fun cancelDownload() {
         DownloadServiceManager.cancelDownload()
+        // Refresh immediately when cancelled to update the list
+        loadDownloads()
     }
 
     fun removeFromQueue(novelUrl: String) {

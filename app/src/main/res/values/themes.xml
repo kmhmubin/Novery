@@ -4,7 +4,7 @@
     <style name="Theme.Novery" parent="android:Theme.Material.Light.NoActionBar" />
     <style name="Theme.Novery.Splash" parent="Theme.SplashScreen">
         <!-- App logo shown during system splash -->
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_monochrome</item>
         <!-- Background color behind the logo while splash is visible -->
         <item name="windowSplashScreenBackground">@color/white</item>
         <!-- Also set windowBackground to avoid flicker on some devices -->

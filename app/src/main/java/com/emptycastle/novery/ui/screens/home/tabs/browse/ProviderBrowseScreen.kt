@@ -34,10 +34,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -1640,38 +1642,77 @@ private fun MainContent(
 ) {
     val dimensions = NoveryTheme.dimensions
 
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(gridColumns),
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 100.dp),
-        horizontalArrangement = Arrangement.spacedBy(dimensions.cardSpacing),
-        verticalArrangement = Arrangement.spacedBy(dimensions.cardSpacing)
-    ) {
-        if (!uiState.isSearchMode) {
-            item(span = { GridItemSpan(maxLineSpan) }, key = "filter_bar_panel") {
-                FilterBarWithPanel(
-                    uiState = uiState,
-                    showFilters = showFilters,
-                    onToggleFilters = onToggleFilters,
-                    onSortChange = onSortChange,
-                    onTagChange = onTagChange,
-                    onClearFilters = onClearFilters
-                )
+    when (appSettings.browseDisplayMode) {
+        com.emptycastle.novery.domain.model.DisplayMode.GRID -> {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(gridColumns),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 100.dp),
+                horizontalArrangement = Arrangement.spacedBy(dimensions.cardSpacing),
+                verticalArrangement = Arrangement.spacedBy(dimensions.cardSpacing)
+            ) {
+                if (!uiState.isSearchMode) {
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "filter_bar_panel") {
+                        FilterBarWithPanel(
+                            uiState = uiState,
+                            showFilters = showFilters,
+                            onToggleFilters = onToggleFilters,
+                            onSortChange = onSortChange,
+                            onTagChange = onTagChange,
+                            onClearFilters = onClearFilters
+                        )
+                    }
+                }
+
+                item(span = { GridItemSpan(maxLineSpan) }, key = "spacer") {
+                    Spacer(modifier = Modifier.height(BrowseDesign.spacingSm))
+                }
+
+                items(items = uiState.displayNovels, key = { it.url }) { novel ->
+                    NovelCard(
+                        novel = novel,
+                        onClick = { onNovelClick(novel) },
+                        onLongClick = { onNovelLongClick(novel) },
+                        density = appSettings.uiDensity,
+                        modifier = Modifier.padding(horizontal = dimensions.gridPadding / 2)
+                    )
+                }
             }
         }
+        com.emptycastle.novery.domain.model.DisplayMode.LIST -> {
+            // List mode
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 100.dp),
+                verticalArrangement = Arrangement.spacedBy(dimensions.cardSpacing)
+            ) {
+                if (!uiState.isSearchMode) {
+                    item(key = "filter_bar_panel") {
+                        FilterBarWithPanel(
+                            uiState = uiState,
+                            showFilters = showFilters,
+                            onToggleFilters = onToggleFilters,
+                            onSortChange = onSortChange,
+                            onTagChange = onTagChange,
+                            onClearFilters = onClearFilters
+                        )
+                    }
+                }
 
-        item(span = { GridItemSpan(maxLineSpan) }, key = "spacer") {
-            Spacer(modifier = Modifier.height(BrowseDesign.spacingSm))
-        }
+                item(key = "spacer") {
+                    Spacer(modifier = Modifier.height(BrowseDesign.spacingSm))
+                }
 
-        items(items = uiState.displayNovels, key = { it.url }) { novel ->
-            NovelCard(
-                novel = novel,
-                onClick = { onNovelClick(novel) },
-                onLongClick = { onNovelLongClick(novel) },
-                density = appSettings.uiDensity,
-                modifier = Modifier.padding(horizontal = dimensions.gridPadding / 2)
-            )
+                items(uiState.displayNovels, key = { it.url }) { novel ->
+                    com.emptycastle.novery.ui.components.NovelListItem(
+                        novel = novel,
+                        onClick = { onNovelClick(novel) },
+                        onLongClick = { onNovelLongClick(novel) },
+                        density = appSettings.uiDensity,
+                        modifier = Modifier.padding(horizontal = dimensions.gridPadding / 2)
+                    )
+                }
+            }
         }
     }
 }

@@ -21,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
@@ -132,6 +134,7 @@ fun DownloadsScreen(
                         downloadedNovels = uiState.downloadedNovels,
                         activeDownloads = uiState.activeDownloads,
                         totalStorageUsed = uiState.totalStorageUsed,
+                        sortOrder = uiState.sortOrder,
                         onNovelClick = { novel ->
                             onNovelClick(novel.novelUrl, novel.sourceName)
                         },
@@ -141,7 +144,8 @@ fun DownloadsScreen(
                         onPauseClick = { viewModel.pauseDownload() },
                         onResumeClick = { viewModel.resumeDownload() },
                         onCancelClick = { showCancelDialog = true },
-                        onRemoveFromQueue = { novelUrl -> viewModel.removeFromQueue(novelUrl) }
+                        onRemoveFromQueue = { novelUrl -> viewModel.removeFromQueue(novelUrl) },
+                        onToggleSortOrder = { viewModel.toggleSortOrder() }
                     )
                 }
             }
@@ -232,12 +236,14 @@ private fun DownloadsContent(
     downloadedNovels: List<DownloadedNovel>,
     activeDownloads: List<ActiveDownload>,
     totalStorageUsed: String,
+    sortOrder: DownloadSortOrder,
     onNovelClick: (DownloadedNovel) -> Unit,
     onDeleteClick: (DownloadedNovel) -> Unit,
     onPauseClick: () -> Unit,
     onResumeClick: () -> Unit,
     onCancelClick: () -> Unit,
-    onRemoveFromQueue: (String) -> Unit
+    onRemoveFromQueue: (String) -> Unit,
+    onToggleSortOrder: () -> Unit
 ) {
     val dimensions = NoveryTheme.dimensions
 
@@ -284,9 +290,11 @@ private fun DownloadsContent(
         // Downloaded Novels Section
         if (downloadedNovels.isNotEmpty()) {
             item(key = "downloaded_header") {
-                SectionHeader(
+                SectionHeaderWithSort(
                     title = "Downloaded Novels",
-                    icon = Icons.Rounded.DownloadDone
+                    icon = Icons.Rounded.DownloadDone,
+                    sortOrder = sortOrder,
+                    onToggleSortOrder = onToggleSortOrder
                 )
             }
 
@@ -518,7 +526,8 @@ private fun ActiveDownloadCard(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = if (download.isPaused) "Paused" else (download.speed.takeIf { it.isNotBlank() } ?: "Downloading..."),
+                            text = if (download.isPaused) "Paused" else (download.speed.takeIf { it.isNotBlank() }
+                                ?: "Downloading..."),
                             style = MaterialTheme.typography.labelSmall,
                             color = if (download.isPaused)
                                 MaterialTheme.colorScheme.error
@@ -697,6 +706,59 @@ private fun SectionHeader(
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onBackground
         )
+    }
+}
+
+@Composable
+private fun SectionHeaderWithSort(
+    title: String,
+    icon: ImageVector,
+    sortOrder: DownloadSortOrder,
+    onToggleSortOrder: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
+
+        // Sort toggle button
+        IconButton(
+            onClick = onToggleSortOrder,
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                imageVector = when (sortOrder) {
+                    DownloadSortOrder.NEWEST_FIRST -> Icons.Rounded.ArrowDownward
+                    DownloadSortOrder.OLDEST_FIRST -> Icons.Rounded.ArrowUpward
+                },
+                contentDescription = when (sortOrder) {
+                    DownloadSortOrder.NEWEST_FIRST -> "Sorted newest first"
+                    DownloadSortOrder.OLDEST_FIRST -> "Sorted oldest first"
+                },
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

@@ -86,6 +86,26 @@ interface OfflineDao {
 
     @Query("DELETE FROM novel_details")
     suspend fun deleteAllNovelDetails()
+    /**
+     * Get download info for all novels with downloaded chapters
+     */
+    @Query("""
+    SELECT novelUrl, 
+           COUNT(*) as chapterCount, 
+           MAX(downloadedAt) as lastDownloadedAt 
+    FROM offline_chapters 
+    GROUP BY novelUrl
+""")
+    suspend fun getAllDownloadInfo(): List<DownloadInfoTuple>
+
+    /**
+     * Tuple for download info query result
+     */
+    data class DownloadInfoTuple(
+        val novelUrl: String,
+        val chapterCount: Int,
+        val lastDownloadedAt: Long
+    )
 }
 
 /**

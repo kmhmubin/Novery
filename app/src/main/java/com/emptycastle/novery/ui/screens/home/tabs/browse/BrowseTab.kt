@@ -1293,27 +1293,53 @@ private fun ProviderSearchResultsSection(
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = dimensions.gridPadding),
-            horizontalArrangement = Arrangement.spacedBy(dimensions.cardSpacing)
-        ) {
-            items(displayNovels, key = { it.url }) { novel ->
-                NovelCard(
-                    novel = novel,
-                    onClick = { onNovelClick(novel) },
-                    onLongClick = { onNovelLongClick(novel) },
-                    density = appSettings.uiDensity,
-                    modifier = Modifier.width(110.dp)
-                )
-            }
+        when (appSettings.searchDisplayMode) {
+            com.emptycastle.novery.domain.model.DisplayMode.GRID -> {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = dimensions.gridPadding),
+                    horizontalArrangement = Arrangement.spacedBy(dimensions.cardSpacing)
+                ) {
+                    items(displayNovels, key = { it.url }) { novel ->
+                        NovelCard(
+                            novel = novel,
+                            onClick = { onNovelClick(novel) },
+                            onLongClick = { onNovelLongClick(novel) },
+                            density = appSettings.uiDensity,
+                            modifier = Modifier.width(110.dp)
+                        )
+                    }
 
-            if (hasMore) {
-                item {
-                    ViewMoreCard(
-                        remainingCount = novels.size - maxResults,
-                        color = providerColor,
-                        onClick = onShowMore
-                    )
+                    if (hasMore) {
+                        item {
+                            ViewMoreCard(
+                                remainingCount = novels.size - maxResults,
+                                color = providerColor,
+                                onClick = onShowMore
+                            )
+                        }
+                    }
+                }
+            }
+            com.emptycastle.novery.domain.model.DisplayMode.LIST -> {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    displayNovels.forEach { novel ->
+                        com.emptycastle.novery.ui.components.NovelListItem(
+                            novel = novel,
+                            onClick = { onNovelClick(novel) },
+                            onLongClick = { onNovelLongClick(novel) },
+                            density = appSettings.uiDensity,
+                            modifier = Modifier.padding(horizontal = dimensions.gridPadding)
+                        )
+                    }
+
+                    if (hasMore) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        ViewMoreCard(
+                            remainingCount = novels.size - maxResults,
+                            color = providerColor,
+                            onClick = onShowMore
+                        )
+                    }
                 }
             }
         }

@@ -27,6 +27,9 @@ class ProfileViewModel : ViewModel() {
     private val _events = Channel<ProfileEvent>(Channel.Factory.BUFFERED)
     val events = _events.receiveAsFlow()
 
+    // Track if we've done initial repair
+    private var hasRepairedStats = false
+
     // Reader level definitions
     private data class ReaderLevel(
         val level: Int,
@@ -64,12 +67,19 @@ class ProfileViewModel : ViewModel() {
                             longestStreak = streak.longestStreak,
                             isStreakActive = isActive,
                             totalDaysRead = streak.totalDaysRead,
-                            totalReadingTime = streak.totalReadingTimeSeconds
+                            // Use streak's totalReadingTimeSeconds if available,
+                            // otherwise keep the calculated value from loadStats
+                            totalReadingTime = if (streak.totalReadingTimeSeconds > 0) {
+                                streak.totalReadingTimeSeconds
+                            } else {
+                                it.totalReadingTime
+                            }
                         )
                     }
 
-                    // Update reader level
-                    updateReaderLevel(streak.totalReadingTimeSeconds / 3600)
+                    // Update reader level based on total reading time
+                    val totalSeconds = _uiState.value.totalReadingTime
+                    updateReaderLevel(totalSeconds / 3600)
                 }
             }
         }
@@ -106,6 +116,12 @@ class ProfileViewModel : ViewModel() {
             _uiState.update { it.copy(isLoading = true) }
 
             try {
+                // Repair streak total time on first load (one-time migration)
+                if (!hasRepairedStats) {
+                    statsRepository.repairStreakTotalTime()
+                    hasRepairedStats = true
+                }
+
                 // Load today's stats
                 val todayStats = statsRepository.getTodayStats()
 
@@ -114,6 +130,9 @@ class ProfileViewModel : ViewModel() {
 
                 // Load month stats
                 val monthStats = statsRepository.getMonthStats()
+
+                // Load ALL TIME stats for total reading time
+                val allTimeStats = statsRepository.getAllTimeStats()
 
                 // Load weekly activity (last 7 days)
                 val weeklyActivity = loadWeeklyActivity()
@@ -131,6 +150,9 @@ class ProfileViewModel : ViewModel() {
                 // Calculate total chapters
                 val totalChapters = calculateTotalChapters()
 
+                // Use all-time stats for total reading time as primary source
+                val totalReadingTime = allTimeStats?.totalTime ?: 0L
+
                 _uiState.update {
                     it.copy(
                         isLoading = false,
@@ -146,6 +168,9 @@ class ProfileViewModel : ViewModel() {
 
                         totalChaptersRead = totalChapters,
 
+                        // Use calculated total reading time from all stats
+                        totalReadingTime = totalReadingTime,
+
                         weeklyActivity = weeklyActivity,
                         mostReadNovels = mostReadNovels,
 
@@ -155,6 +180,10 @@ class ProfileViewModel : ViewModel() {
                         achievements = achievements
                     )
                 }
+
+                // Update reader level with the calculated total
+                updateReaderLevel(totalReadingTime / 3600)
+
             } catch (e: Exception) {
                 e.printStackTrace()
                 _uiState.update { it.copy(isLoading = false) }
@@ -190,12 +219,10 @@ class ProfileViewModel : ViewModel() {
 
         return topNovels.mapNotNull { novel ->
             try {
-
-                // If not in offline cache, try library
+                // Try to get from library first
                 val libraryItem = libraryRepository.getLibraryItem(novel.novelUrl)
 
-                // Get source name from either source
-                // offlineDetails has sourceName, libraryItem.novel has apiName
+                // Get source name
                 val sourceName = libraryItem?.novel?.apiName
                     ?: extractSourceFromUrl(novel.novelUrl)
 
@@ -254,11 +281,10 @@ class ProfileViewModel : ViewModel() {
     }
 
     private suspend fun calculateAchievements(): List<Achievement> {
-        val state = _uiState.value
-        val streak = statsRepository.getStreak()
-
         val totalChapters = calculateTotalChapters()
-        val totalHours = state.totalReadingTime / 3600
+        val allTimeStats = statsRepository.getAllTimeStats()
+        val totalHours = (allTimeStats?.totalTime ?: 0) / 3600
+        val streak = statsRepository.getStreak()
         val longestStreak = streak?.longestStreak ?: 0
 
         return listOf(

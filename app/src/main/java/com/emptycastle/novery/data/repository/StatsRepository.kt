@@ -32,6 +32,8 @@ class StatsRepository(
         durationSeconds: Long,
         wordsRead: Long = 0
     ) = withContext(Dispatchers.IO) {
+        if (durationSeconds <= 0) return@withContext
+
         val today = getCurrentEpochDay()
 
         val existing = statsDao.getStatsForDay(novelUrl, today)
@@ -55,8 +57,8 @@ class StatsRepository(
             statsDao.insertStats(newStats)
         }
 
-        // Update streak
-        updateStreak(today)
+        // Update streak with accumulated reading time
+        updateStreak(today, durationSeconds)
     }
 
     /**
@@ -89,33 +91,44 @@ class StatsRepository(
             )
             statsDao.insertStats(newStats)
         }
+
+        // Also update streak for chapter completion (no additional time)
+        updateStreak(today, 0)
     }
 
     // ================================================================
     // STREAK MANAGEMENT
     // ================================================================
 
-    private suspend fun updateStreak(currentDay: Long) {
+    /**
+     * Update streak with accumulated reading time
+     */
+    private suspend fun updateStreak(currentDay: Long, addedSeconds: Long) {
         val streak = statsDao.getStreak() ?: ReadingStreakEntity()
 
         val newStreak = when {
-            // Same day, no change
-            streak.lastReadDate == currentDay -> streak
+            // Same day - just add reading time
+            streak.lastReadDate == currentDay -> streak.copy(
+                totalReadingTimeSeconds = streak.totalReadingTimeSeconds + addedSeconds,
+                updatedAt = System.currentTimeMillis()
+            )
 
-            // Consecutive day, increment streak
+            // Consecutive day - increment streak and add time
             streak.lastReadDate == currentDay - 1 -> streak.copy(
                 currentStreak = streak.currentStreak + 1,
                 longestStreak = maxOf(streak.longestStreak, streak.currentStreak + 1),
                 lastReadDate = currentDay,
                 totalDaysRead = streak.totalDaysRead + 1,
+                totalReadingTimeSeconds = streak.totalReadingTimeSeconds + addedSeconds,
                 updatedAt = System.currentTimeMillis()
             )
 
-            // Gap in reading, reset streak
+            // Gap in reading - reset streak but keep total time
             else -> streak.copy(
                 currentStreak = 1,
                 lastReadDate = currentDay,
                 totalDaysRead = streak.totalDaysRead + 1,
+                totalReadingTimeSeconds = streak.totalReadingTimeSeconds + addedSeconds,
                 updatedAt = System.currentTimeMillis()
             )
         }
@@ -142,21 +155,29 @@ class StatsRepository(
     }
 
     /**
-     * Get stats for this week
+     * Get stats for this week (last 7 days)
      */
     suspend fun getWeekStats(): AggregatedStats? = withContext(Dispatchers.IO) {
         val today = getCurrentEpochDay()
-        val weekStart = today - 6  // Last 7 days
+        val weekStart = today - 6  // Last 7 days including today
         statsDao.getAggregatedStats(weekStart, today)
     }
 
     /**
-     * Get stats for this month
+     * Get stats for this month (last 30 days)
      */
     suspend fun getMonthStats(): AggregatedStats? = withContext(Dispatchers.IO) {
         val today = getCurrentEpochDay()
-        val monthStart = today - 29  // Last 30 days
+        val monthStart = today - 29  // Last 30 days including today
         statsDao.getAggregatedStats(monthStart, today)
+    }
+
+    /**
+     * Get ALL TIME stats - useful for calculating total reading time
+     */
+    suspend fun getAllTimeStats(): AggregatedStats? = withContext(Dispatchers.IO) {
+        // Use a very wide range to capture all stats
+        statsDao.getAggregatedStats(0, Long.MAX_VALUE)
     }
 
     /**
@@ -189,6 +210,29 @@ class StatsRepository(
         withContext(Dispatchers.IO) {
             statsDao.getRecentlyReadNovels(limit)
         }
+
+    // ================================================================
+    // DATA REPAIR / MIGRATION
+    // ================================================================
+
+    /**
+     * Recalculate and repair streak's totalReadingTimeSeconds from reading_stats.
+     * Call this once to fix existing data.
+     */
+    suspend fun repairStreakTotalTime() = withContext(Dispatchers.IO) {
+        val allTimeStats = getAllTimeStats()
+        val totalSeconds = allTimeStats?.totalTime ?: 0L
+
+        val streak = statsDao.getStreak() ?: return@withContext
+
+        if (streak.totalReadingTimeSeconds != totalSeconds) {
+            val repaired = streak.copy(
+                totalReadingTimeSeconds = totalSeconds,
+                updatedAt = System.currentTimeMillis()
+            )
+            statsDao.updateStreak(repaired)
+        }
+    }
 
     // ================================================================
     // HELPERS

@@ -289,6 +289,27 @@ class OfflineRepository(
             offlineDao.deleteNovelDetails(novelUrl)
         }
     }
+    /**
+     * Data class for download info including timestamp
+     */
+    data class DownloadInfo(
+        val novelUrl: String,
+        val chapterCount: Int,
+        val lastDownloadedAt: Long
+    )
+
+    /**
+     * Get all novels with their download counts and last download timestamp
+     */
+    suspend fun getAllDownloadInfo(): List<DownloadInfo> = withContext(Dispatchers.IO) {
+        offlineDao.getAllDownloadInfo().map { tuple ->
+            DownloadInfo(
+                novelUrl = tuple.novelUrl,
+                chapterCount = tuple.chapterCount,
+                lastDownloadedAt = tuple.lastDownloadedAt
+            )
+        }
+    }
 
     /**
      * Delete a single downloaded chapter.
