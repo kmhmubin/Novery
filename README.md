@@ -23,6 +23,7 @@
 ---
 
 <div id="features"></div>
+
 ## ✨ Features
 
 ### 📚 Multi-Source Browse & Search
@@ -74,6 +75,7 @@
 ---
 
 <div id="screenshots"></div>
+
 ## 📸 Screenshots
 
 <div align="center" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 16px;">
@@ -96,6 +98,7 @@
 ---
 
 <div id="installation"></div>
+
 ## 📥 Installation
 
 ### Download
