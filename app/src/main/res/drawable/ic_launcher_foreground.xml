@@ -3,76 +3,64 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-  <group android:scaleX="0.9"
-      android:scaleY="0.9"
-      android:translateX="5.4"
-      android:translateY="5.4">
 
-      <!-- 
-        BACKGROUND LAYER 
-        Note: In a true Adaptive Icon setup, this is usually a separate file 
-        (ic_launcher_background.xml). I have included it here so this file 
-        works as a standalone logo. If you have a separate background file, 
-        remove this path.
-      -->
 
-      <!-- GROUP: Centering and Alignment -->
-      <group>
-          
-          <!-- DROP SHADOW LAYER (For depth) -->
-          <!-- This duplicates the runes slightly offset in black with opacity -->
-          <path
-              android:pathData="
-                  M40,34 V74 
-                  M32,50 L48,64
-                  M70,34 L80,50 L70,62 L60,50 Z
-                  M70,62 L62,74 
-                  M70,62 L78,74"
-              android:strokeColor="#33000000"
-              android:strokeWidth="6"
-              android:strokeLineCap="round"
-              android:strokeLineJoin="round"
-              android:translateX="2"
-              android:translateY="2"/>
+    <!-- GROUP: Centering and Alignment -->
+    <group>
+        
+        <!-- DROP SHADOW LAYER (For depth) -->
+        <!-- This duplicates the runes slightly offset in black with opacity -->
+        <path
+            android:pathData="
+                M40,34 V74 
+                M32,50 L48,64
+                M70,34 L80,50 L70,62 L60,50 Z
+                M70,62 L62,74 
+                M70,62 L78,74"
+            android:strokeColor="#33000000"
+            android:strokeWidth="6"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:translateX="2"
+            android:translateY="2"/>
 
-          <!-- 
-             RUNE: ᚾ (Naudhiz) 
-             Coordinates: Left side, centered vertically
-          -->
-          <!-- Vertical Stave -->
-          <path
-              android:pathData="M40,34 V74"
-              android:strokeColor="#FFC107"
-              android:strokeWidth="6"
-              android:strokeLineCap="round"/>
-          
-          <!-- Diagonal Cross (The 'Need' stroke) -->
-          <path
-              android:pathData="M32,50 L48,64"
-              android:strokeColor="#FFC107"
-              android:strokeWidth="6"
-              android:strokeLineCap="round"/>
+        <!-- 
+           RUNE: ᚾ (Naudhiz) 
+           Coordinates: Left side, centered vertically
+        -->
+        <!-- Vertical Stave -->
+        <path
+            android:pathData="M40,34 V74"
+            android:strokeColor="#FFC107"
+            android:strokeWidth="6"
+            android:strokeLineCap="round"/>
+        
+        <!-- Diagonal Cross (The 'Need' stroke) -->
+        <path
+            android:pathData="M32,50 L48,64"
+            android:strokeColor="#FFC107"
+            android:strokeWidth="6"
+            android:strokeLineCap="round"/>
 
-          <!-- 
-             RUNE: ᛟ (Othala) 
-             Coordinates: Right side, aligned with Naudhiz
-          -->
-          <!-- The Diamond Loop -->
-          <path
-              android:pathData="M70,34 L80,50 L70,62 L60,50 Z"
-              android:strokeColor="#FFC107"
-              android:strokeWidth="6"
-              android:strokeLineCap="round"
-              android:strokeLineJoin="round"/>
+        <!-- 
+           RUNE: ᛟ (Othala) 
+           Coordinates: Right side, aligned with Naudhiz
+        -->
+        <!-- The Diamond Loop -->
+        <path
+            android:pathData="M70,34 L80,50 L70,62 L60,50 Z"
+            android:strokeColor="#FFC107"
+            android:strokeWidth="6"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"/>
 
-          <!-- The Legs -->
-          <path
-              android:pathData="M70,62 L62,74 M70,62 L78,74"
-              android:strokeColor="#FFC107"
-              android:strokeWidth="6"
-              android:strokeLineCap="round"
-              android:strokeLineJoin="round"/>
-              
-      </group>
-  </group>
+        <!-- The Legs -->
+        <path
+            android:pathData="M70,62 L62,74 M70,62 L78,74"
+            android:strokeColor="#FFC107"
+            android:strokeWidth="6"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"/>
+            
+    </group>
 </vector>
