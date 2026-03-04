@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -29,6 +30,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -66,7 +68,7 @@ private object HistoryItemTokens {
 }
 
 /**
- * Standard History List Item with two-stage swipe-to-delete confirmation
+ * Standard History List Item with swipe-to-delete and selection support
  */
 @Composable
 fun HistoryListItem(
@@ -75,34 +77,53 @@ fun HistoryListItem(
     onRemoveClick: () -> Unit,
     onItemClick: () -> Unit,
     onLongClick: () -> Unit = {},
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    TwoStageSwipeToDelete(
-        onDelete = onRemoveClick,
-        deleteButtonWidth = HistoryItemTokens.DeleteButtonWidth,
-        shape = HistoryItemTokens.CardShape,
-        modifier = modifier
-    ) { swipeState: SwipeDeleteState, onResetSwipe: () -> Unit ->
+    if (isSelectionMode) {
+        // No swipe in selection mode
         HistoryCardContent(
             item = item,
             onContinueClick = onContinueClick,
             onRemoveClick = onRemoveClick,
-            onItemClick = {
-                if (swipeState == SwipeDeleteState.Primed) {
-                    onResetSwipe()
-                } else {
-                    onItemClick()
-                }
-            },
+            onItemClick = onItemClick,
             onLongClick = onLongClick,
             isCompact = false,
-            isDeletePrimed = swipeState == SwipeDeleteState.Primed
+            isDeletePrimed = false,
+            isSelectionMode = true,
+            isSelected = isSelected
         )
+    } else {
+        TwoStageSwipeToDelete(
+            onDelete = onRemoveClick,
+            deleteButtonWidth = HistoryItemTokens.DeleteButtonWidth,
+            shape = HistoryItemTokens.CardShape,
+            modifier = modifier
+        ) { swipeState: SwipeDeleteState, onResetSwipe: () -> Unit ->
+            HistoryCardContent(
+                item = item,
+                onContinueClick = onContinueClick,
+                onRemoveClick = onRemoveClick,
+                onItemClick = {
+                    if (swipeState == SwipeDeleteState.Primed) {
+                        onResetSwipe()
+                    } else {
+                        onItemClick()
+                    }
+                },
+                onLongClick = onLongClick,
+                isCompact = false,
+                isDeletePrimed = swipeState == SwipeDeleteState.Primed,
+                isSelectionMode = false,
+                isSelected = false
+            )
+        }
     }
 }
 
 /**
- * Compact version with two-stage swipe-to-delete confirmation
+ * Compact version with swipe-to-delete and selection support
  */
 @Composable
 fun HistoryListItemCompact(
@@ -111,29 +132,47 @@ fun HistoryListItemCompact(
     onRemoveClick: () -> Unit,
     onItemClick: () -> Unit,
     onLongClick: () -> Unit = {},
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    TwoStageSwipeToDelete(
-        onDelete = onRemoveClick,
-        deleteButtonWidth = HistoryItemTokens.CompactDeleteButtonWidth,
-        shape = HistoryItemTokens.CompactCardShape,
-        modifier = modifier
-    ) { swipeState: SwipeDeleteState, onResetSwipe: () -> Unit ->
+    if (isSelectionMode) {
         HistoryCardContent(
             item = item,
             onContinueClick = onContinueClick,
             onRemoveClick = onRemoveClick,
-            onItemClick = {
-                if (swipeState == SwipeDeleteState.Primed) {
-                    onResetSwipe()
-                } else {
-                    onItemClick()
-                }
-            },
+            onItemClick = onItemClick,
             onLongClick = onLongClick,
             isCompact = true,
-            isDeletePrimed = swipeState == SwipeDeleteState.Primed
+            isDeletePrimed = false,
+            isSelectionMode = true,
+            isSelected = isSelected
         )
+    } else {
+        TwoStageSwipeToDelete(
+            onDelete = onRemoveClick,
+            deleteButtonWidth = HistoryItemTokens.CompactDeleteButtonWidth,
+            shape = HistoryItemTokens.CompactCardShape,
+            modifier = modifier
+        ) { swipeState: SwipeDeleteState, onResetSwipe: () -> Unit ->
+            HistoryCardContent(
+                item = item,
+                onContinueClick = onContinueClick,
+                onRemoveClick = onRemoveClick,
+                onItemClick = {
+                    if (swipeState == SwipeDeleteState.Primed) {
+                        onResetSwipe()
+                    } else {
+                        onItemClick()
+                    }
+                },
+                onLongClick = onLongClick,
+                isCompact = true,
+                isDeletePrimed = swipeState == SwipeDeleteState.Primed,
+                isSelectionMode = false,
+                isSelected = false
+            )
+        }
     }
 }
 
@@ -146,30 +185,38 @@ private fun HistoryCardContent(
     onItemClick: () -> Unit,
     onLongClick: () -> Unit,
     isCompact: Boolean,
-    isDeletePrimed: Boolean = false
+    isDeletePrimed: Boolean = false,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false
 ) {
     val haptic = LocalHapticFeedback.current
     val relativeTime = remember(item.timestamp) { formatRelativeTime(item.timestamp) }
 
     val cardColor by animateColorAsState(
-        targetValue = if (isDeletePrimed) {
-            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
-        } else {
-            MaterialTheme.colorScheme.surfaceContainer
+        targetValue = when {
+            isDeletePrimed -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
+            isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
+            else -> MaterialTheme.colorScheme.surfaceContainer
         },
         animationSpec = tween(200),
         label = "card_color"
     )
 
     val borderColor by animateColorAsState(
-        targetValue = if (isDeletePrimed) {
-            MaterialTheme.colorScheme.error.copy(alpha = 0.3f)
-        } else {
-            Color.Transparent
+        targetValue = when {
+            isDeletePrimed -> MaterialTheme.colorScheme.error.copy(alpha = 0.3f)
+            isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+            else -> Color.Transparent
         },
         animationSpec = tween(200),
         label = "border_color"
     )
+
+    val border = when {
+        isDeletePrimed -> BorderStroke(1.dp, borderColor)
+        isSelected -> BorderStroke(1.5.dp, borderColor)
+        else -> null
+    }
 
     Card(
         modifier = Modifier
@@ -184,7 +231,7 @@ private fun HistoryCardContent(
         shape = if (isCompact) HistoryItemTokens.CompactCardShape else HistoryItemTokens.CardShape,
         colors = CardDefaults.cardColors(containerColor = cardColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        border = if (isDeletePrimed) BorderStroke(1.dp, borderColor) else null
+        border = border
     ) {
         Row(
             modifier = Modifier
@@ -193,11 +240,13 @@ private fun HistoryCardContent(
             horizontalArrangement = Arrangement.spacedBy(if (isCompact) 10.dp else 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Cover thumbnail
+            // Cover thumbnail with selection overlay
             CoverThumbnail(
                 imageUrl = item.novel.posterUrl,
                 contentDescription = item.novel.name,
-                isCompact = isCompact
+                isCompact = isCompact,
+                isSelectionMode = isSelectionMode,
+                isSelected = isSelected
             )
 
             // Info column
@@ -265,8 +314,10 @@ private fun HistoryCardContent(
                 }
             }
 
-            // Action buttons - hide when primed
-            if (!isDeletePrimed) {
+            // Action buttons — hidden in selection mode
+            if (isSelectionMode) {
+                // No action buttons in selection mode
+            } else if (!isDeletePrimed) {
                 if (isCompact) {
                     FilledIconButton(
                         onClick = onContinueClick,
@@ -333,11 +384,16 @@ private fun CoverThumbnail(
     imageUrl: String?,
     contentDescription: String,
     isCompact: Boolean,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val width = if (isCompact) HistoryItemTokens.CompactCoverWidth else HistoryItemTokens.CoverWidth
-    val height = if (isCompact) HistoryItemTokens.CompactCoverHeight else HistoryItemTokens.CoverHeight
-    val shape = if (isCompact) HistoryItemTokens.CompactImageShape else HistoryItemTokens.ImageShape
+    val width =
+        if (isCompact) HistoryItemTokens.CompactCoverWidth else HistoryItemTokens.CoverWidth
+    val height =
+        if (isCompact) HistoryItemTokens.CompactCoverHeight else HistoryItemTokens.CoverHeight
+    val shape =
+        if (isCompact) HistoryItemTokens.CompactImageShape else HistoryItemTokens.ImageShape
 
     Box(
         modifier = modifier
@@ -345,6 +401,7 @@ private fun CoverThumbnail(
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
     ) {
+        // Placeholder icon
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
@@ -357,6 +414,7 @@ private fun CoverThumbnail(
             )
         }
 
+        // Cover image
         if (!imageUrl.isNullOrBlank()) {
             AsyncImage(
                 model = imageUrl,
@@ -366,6 +424,7 @@ private fun CoverThumbnail(
             )
         }
 
+        // Bottom gradient
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -380,5 +439,50 @@ private fun CoverThumbnail(
                     )
                 )
         )
+
+        // Selection overlay
+        if (isSelectionMode) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        if (isSelected)
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                        else
+                            Color.Black.copy(alpha = 0.35f)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                val checkSize = if (isCompact) 22.dp else 26.dp
+                val iconSize = if (isCompact) 14.dp else 16.dp
+
+                Surface(
+                    modifier = Modifier.size(checkSize),
+                    shape = CircleShape,
+                    color = if (isSelected)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        Color.Transparent,
+                    border = if (!isSelected)
+                        BorderStroke(2.dp, Color.White.copy(alpha = 0.8f))
+                    else
+                        null
+                ) {
+                    if (isSelected) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Selected",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(iconSize)
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }

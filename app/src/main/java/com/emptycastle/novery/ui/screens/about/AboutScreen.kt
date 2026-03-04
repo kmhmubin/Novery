@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Policy
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Update
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -35,12 +36,14 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -59,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.emptycastle.novery.R
+import com.emptycastle.novery.ui.components.MarkdownText
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,7 +113,8 @@ fun AboutScreen(
                     uiState = uiState,
                     onCheckUpdate = { viewModel.checkForUpdate() },
                     onDownload = { url -> openUrl(url) },
-                    onViewRelease = { url -> openUrl(url) }
+                    onViewRelease = { url -> openUrl(url) },
+                    onToggleAutoCheck = { enabled -> viewModel.setCheckUpdatesOnStartup(enabled) }
                 )
             }
 
@@ -263,7 +268,8 @@ private fun UpdateCard(
     uiState: AboutUiState,
     onCheckUpdate: () -> Unit,
     onDownload: (String) -> Unit,
-    onViewRelease: (String) -> Unit
+    onViewRelease: (String) -> Unit,
+    onToggleAutoCheck: (Boolean) -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -293,6 +299,35 @@ private fun UpdateCard(
                     fontWeight = FontWeight.SemiBold
                 )
             }
+
+            // Auto-check toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Check on startup",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Automatically check for updates when app opens",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Switch(
+                    checked = uiState.checkUpdatesOnStartup,
+                    onCheckedChange = onToggleAutoCheck
+                )
+            }
+
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
 
             AnimatedContent(
                 targetState = Triple(
@@ -343,6 +378,12 @@ private fun UpdateCard(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             OutlinedButton(onClick = onCheckUpdate) {
+                                Icon(
+                                    Icons.Outlined.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
                                 Text("Try Again")
                             }
                         }
@@ -446,14 +487,9 @@ private fun UpdateAvailableContent(
             }
         }
 
+        // Release notes with proper markdown rendering
         result.releaseNotes?.let { notes ->
             if (notes.isNotBlank()) {
-                val preview = notes
-                    .lines()
-                    .filter { it.isNotBlank() }
-                    .take(8)
-                    .joinToString("\n")
-
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
@@ -465,11 +501,10 @@ private fun UpdateAvailableContent(
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = preview,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface
+                        Spacer(Modifier.height(8.dp))
+                        MarkdownText(
+                            text = notes,
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
                 }

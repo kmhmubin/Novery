@@ -60,6 +60,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -82,6 +83,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -127,7 +129,6 @@ fun NovelHeader(
                 .fillMaxWidth()
                 .statusBarsPadding()
         ) {
-            // Top bar WITHOUT favorite button (moved to info column)
             HeaderTopBar(
                 onBack = onBack,
                 onShare = onShare,
@@ -214,7 +215,7 @@ private fun HeaderBackground(
 }
 
 // ================================================================
-// TOP BAR - WITHOUT FAVORITE BUTTON
+// TOP BAR
 // ================================================================
 
 @Composable
@@ -273,7 +274,6 @@ private fun HeaderTopBar(
                     )
                 }
             }
-
         }
     }
 }
@@ -576,10 +576,8 @@ private fun NovelInfoColumn(
         verticalArrangement = Arrangement.SpaceBetween
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            CopiableTitle(
-                title = details.name,
-                maxLines = 2
-            )
+            // Dynamic title — no fixed maxLines param needed
+            CopiableTitle(title = details.name)
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 details.author?.takeIf { it.isNotBlank() }?.let { author ->
@@ -602,7 +600,6 @@ private fun NovelInfoColumn(
             }
         }
 
-        // ✨ NEW: Unified Library + Status Button
         LibraryStatusButton(
             isFavorite = isFavorite,
             readingStatus = readingStatus,
@@ -613,7 +610,7 @@ private fun NovelInfoColumn(
 }
 
 // ================================================================
-// ✨ NEW: UNIFIED LIBRARY + STATUS BUTTON
+// UNIFIED LIBRARY + STATUS BUTTON
 // ================================================================
 
 @Composable
@@ -626,7 +623,6 @@ private fun LibraryStatusButton(
 ) {
     val haptic = LocalHapticFeedback.current
 
-    // Heart burst animation when added to library
     var showHeartBurst by remember { mutableStateOf(false) }
     var previousFavorite by remember { mutableStateOf(isFavorite) }
 
@@ -648,7 +644,6 @@ private fun LibraryStatusButton(
         label = "heart_burst_scale"
     )
 
-    // Colors based on state
     val containerColor by animateColorAsState(
         targetValue = if (isFavorite) {
             StatusUtils.getStatusColor(readingStatus).copy(alpha = 0.12f)
@@ -679,15 +674,15 @@ private fun LibraryStatusButton(
             targetState = isFavorite,
             transitionSpec = {
                 if (targetState) {
-                    // Adding to library - expand with scale
                     (fadeIn(animationSpec = tween(300)) +
-                            scaleIn(initialScale = 0.85f, animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                stiffness = Spring.StiffnessLow
-                            )))
+                            scaleIn(
+                                initialScale = 0.85f, animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessLow
+                                )
+                            ))
                         .togetherWith(fadeOut(animationSpec = tween(200)))
                 } else {
-                    // Removing from library - shrink
                     (fadeIn(animationSpec = tween(200)))
                         .togetherWith(
                             fadeOut(animationSpec = tween(200)) +
@@ -736,7 +731,6 @@ private fun InLibraryContent(
         modifier = Modifier.padding(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Heart button (to remove from library)
         val heartInteraction = remember { MutableInteractionSource() }
         val heartPressed by heartInteraction.collectIsPressedAsState()
 
@@ -777,7 +771,6 @@ private fun InLibraryContent(
 
         Spacer(modifier = Modifier.width(6.dp))
 
-        // Status button
         val statusInteraction = remember { MutableInteractionSource() }
         val statusPressed by statusInteraction.collectIsPressedAsState()
 
@@ -894,13 +887,25 @@ private fun AddToLibraryContent(
 }
 
 // ================================================================
-// COPIABLE TITLE
+// DYNAMIC COPIABLE TITLE
 // ================================================================
 
+/**
+ * Holds adaptive sizing values for the title text.
+ */
+private data class TitleSizing(
+    val fontSize: TextUnit,
+    val lineHeight: TextUnit,
+    val maxLines: Int
+)
+
+/**
+ * Title that adapts its font size and line count based on length,
+ * then further shrinks if the text still overflows.
+ */
 @Composable
 private fun CopiableTitle(
-    title: String,
-    maxLines: Int = 2
+    title: String
 ) {
     val clipboardManager = LocalClipboardManager.current
     val haptic = LocalHapticFeedback.current
@@ -919,6 +924,36 @@ private fun CopiableTitle(
         if (showCopiedFeedback) {
             delay(1500)
             showCopiedFeedback = false
+        }
+    }
+
+    // ── Adaptive sizing based on character count ──
+    val baseSizing = remember(title) {
+        val len = title.length
+        when {
+            len <= 18  -> TitleSizing(fontSize = 22.sp, lineHeight = 28.sp, maxLines = 1)
+            len <= 40  -> TitleSizing(fontSize = 22.sp, lineHeight = 26.sp, maxLines = 2)
+            len <= 70  -> TitleSizing(fontSize = 18.sp, lineHeight = 22.sp, maxLines = 3)
+            len <= 110 -> TitleSizing(fontSize = 16.sp, lineHeight = 20.sp, maxLines = 4)
+            else       -> TitleSizing(fontSize = 14.sp, lineHeight = 18.sp, maxLines = 5)
+        }
+    }
+
+    // ── Second pass: shrink once more if still overflowing ──
+    var didOverflow by remember(title) { mutableStateOf(false) }
+    var shrinkStep by remember(title) { mutableIntStateOf(0) }
+
+    val currentSizing = remember(baseSizing, shrinkStep) {
+        if (shrinkStep == 0 || !didOverflow) {
+            baseSizing
+        } else {
+            // Each shrink step reduces font by 2sp and adds a line
+            val steps = shrinkStep.coerceAtMost(3)
+            TitleSizing(
+                fontSize = (baseSizing.fontSize.value - steps * 2f).coerceAtLeast(12f).sp,
+                lineHeight = (baseSizing.lineHeight.value - steps * 2f).coerceAtLeast(16f).sp,
+                maxLines = (baseSizing.maxLines + steps).coerceAtMost(6)
+            )
         }
     }
 
@@ -941,13 +976,21 @@ private fun CopiableTitle(
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontSize = currentSizing.fontSize,
+                    lineHeight = currentSizing.lineHeight
+                ),
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
-                maxLines = maxLines,
+                maxLines = currentSizing.maxLines,
                 overflow = TextOverflow.Ellipsis,
-                lineHeight = 26.sp,
-                modifier = Modifier.weight(1f, fill = false)
+                modifier = Modifier.weight(1f, fill = false),
+                onTextLayout = { result ->
+                    if (result.hasVisualOverflow && shrinkStep < 3) {
+                        didOverflow = true
+                        shrinkStep++
+                    }
+                }
             )
 
             Icon(
@@ -960,6 +1003,7 @@ private fun CopiableTitle(
             )
         }
 
+        // "Copied" toast
         AnimatedVisibility(
             visible = showCopiedFeedback,
             enter = fadeIn() + scaleIn(initialScale = 0.8f),

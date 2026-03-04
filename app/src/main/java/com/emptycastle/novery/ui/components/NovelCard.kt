@@ -72,6 +72,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
@@ -93,19 +94,16 @@ import com.emptycastle.novery.ui.theme.StatusReading
 // ══════════════════════════════════════════════════════════════════════════════
 
 private object NovelCardTokens {
-    // Shapes
     val CardCornerRadius = 16.dp
     val CardShape = RoundedCornerShape(CardCornerRadius)
     val ImageShapeTop = RoundedCornerShape(topStart = CardCornerRadius, topEnd = CardCornerRadius)
     val BadgeShape = RoundedCornerShape(8.dp)
     val PillShape = RoundedCornerShape(50)
 
-    // Sizing
     val AspectRatio = 2f / 3f
     val BadgeIconSize = 14.dp
     val StatusDotSize = 8.dp
 
-    // Spacing
     object Padding {
         val Compact = 8.dp
         val Default = 10.dp
@@ -113,14 +111,12 @@ private object NovelCardTokens {
         val Badge = 8.dp
     }
 
-    // Elevation
     object Elevation {
         val Resting = 2.dp
         val Pressed = 1.dp
         val Badge = 4.dp
     }
 
-    // Animation
     object Animation {
         val PressScale = 0.97f
         const val PressDuration = 100
@@ -186,7 +182,7 @@ fun NovelCard(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Comfortable Layout: Image on top, content below
+// Comfortable Layout
 // ══════════════════════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -222,12 +218,6 @@ private fun ComfortableNovelCard(
         label = "card_elevation"
     )
 
-    val borderColor = if (isSelected) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
-    } else {
-        Color.Transparent
-    }
-
     Card(
         modifier = modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
@@ -235,14 +225,14 @@ private fun ComfortableNovelCard(
                 if (isSelected) {
                     Modifier.border(
                         width = 2.dp,
-                        color = borderColor,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
                         shape = NovelCardTokens.CardShape
                     )
                 } else Modifier
             )
             .combinedClickable(
                 interactionSource = interactionSource,
-                indication = null, // We handle our own visual feedback
+                indication = null,
                 onClick = onClick,
                 onLongClick = onLongClick?.let {
                     {
@@ -258,7 +248,6 @@ private fun ComfortableNovelCard(
         elevation = CardDefaults.cardElevation(defaultElevation = elevation)
     ) {
         Column {
-            // Cover Image Section
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -272,14 +261,12 @@ private fun ComfortableNovelCard(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Subtle vignette overlay for badge contrast
                 VignetteOverlay(
                     modifier = Modifier.fillMaxSize(),
                     topAlpha = 0.4f,
                     bottomAlpha = 0f
                 )
 
-                // Badges row
                 BadgeRow(
                     readingStatus = readingStatus,
                     newChapterCount = newChapterCount,
@@ -290,12 +277,10 @@ private fun ComfortableNovelCard(
                 )
             }
 
-            // Content Section
             Column(
                 modifier = Modifier.padding(NovelCardTokens.Padding.Comfortable),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Progress indicator
                 lastReadChapter?.takeIf { it.isNotBlank() }?.let { chapter ->
                     ChapterProgress(
                         chapterName = chapter,
@@ -303,7 +288,6 @@ private fun ComfortableNovelCard(
                     )
                 }
 
-                // Title
                 Text(
                     text = novel.name,
                     style = MaterialTheme.typography.titleSmall,
@@ -314,7 +298,6 @@ private fun ComfortableNovelCard(
                     lineHeight = 18.sp
                 )
 
-                // Source name
                 if (showApiName && novel.apiName.isNotBlank()) {
                     Text(
                         text = novel.apiName,
@@ -330,7 +313,7 @@ private fun ComfortableNovelCard(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Compact Layout: Full bleed image with text overlay
+// Compact Layout
 // ══════════════════════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -394,17 +377,14 @@ private fun CompactNovelCard(
         elevation = CardDefaults.cardElevation(defaultElevation = elevation)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Cover image
             NovelCoverImage(
                 url = novel.posterUrl,
                 title = novel.name,
                 modifier = Modifier.fillMaxSize()
             )
 
-            // Cinematic gradient overlay
             CinematicOverlay(modifier = Modifier.fillMaxSize())
 
-            // Badges
             BadgeRow(
                 readingStatus = readingStatus,
                 newChapterCount = newChapterCount,
@@ -414,7 +394,6 @@ private fun CompactNovelCard(
                     .padding(NovelCardTokens.Padding.Badge)
             )
 
-            // Content overlay at bottom
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
@@ -422,7 +401,6 @@ private fun CompactNovelCard(
                     .padding(if (isCompact) NovelCardTokens.Padding.Compact else NovelCardTokens.Padding.Default),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Title with text shadow for readability
                 Text(
                     text = novel.name,
                     style = MaterialTheme.typography.labelLarge.copy(
@@ -440,7 +418,6 @@ private fun CompactNovelCard(
                     fontSize = if (isCompact) 11.sp else 13.sp
                 )
 
-                // Progress
                 lastReadChapter?.takeIf { it.isNotBlank() }?.let { chapter ->
                     ChapterProgress(
                         chapterName = chapter,
@@ -448,7 +425,6 @@ private fun CompactNovelCard(
                     )
                 }
 
-                // Source (only in default mode)
                 if (showApiName && novel.apiName.isNotBlank() && !isCompact) {
                     Text(
                         text = novel.apiName,
@@ -482,7 +458,7 @@ private fun NovelCoverImage(
 ) {
     SubcomposeAsyncImage(
         model = url,
-        contentDescription = null, // Handled by parent semantics
+        contentDescription = null,
         modifier = modifier,
         contentScale = ContentScale.Crop
     ) {
@@ -510,7 +486,6 @@ private fun CoverPlaceholder(title: String, modifier: Modifier = Modifier) {
             .shimmerEffect(),
         contentAlignment = Alignment.Center
     ) {
-        // Faint icon hint
         Icon(
             imageVector = Icons.Rounded.AutoStories,
             contentDescription = null,
@@ -617,7 +592,6 @@ private fun BadgeRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Top
     ) {
-        // Status badge - left
         AnimatedVisibility(
             visible = readingStatus != null,
             enter = fadeIn() + slideInVertically { -it },
@@ -633,7 +607,6 @@ private fun BadgeRow(
 
         Spacer(Modifier.weight(1f))
 
-        // New chapters badge - right
         AnimatedVisibility(
             visible = newChapterCount > 0,
             enter = fadeIn() + scaleIn(
@@ -667,7 +640,6 @@ private fun StatusBadge(
     }
 
     if (compactMode) {
-        // Minimal dot indicator with subtle background
         Surface(
             modifier = modifier,
             shape = CircleShape,
@@ -678,14 +650,12 @@ private fun StatusBadge(
                 modifier = Modifier.padding(6.dp),
                 contentAlignment = Alignment.Center
             ) {
-                // Glow effect
                 Box(
                     modifier = Modifier
                         .size(12.dp)
                         .blur(4.dp, BlurredEdgeTreatment.Unbounded)
                         .background(statusColor.copy(alpha = 0.5f), CircleShape)
                 )
-                // Solid dot
                 Box(
                     modifier = Modifier
                         .size(NovelCardTokens.StatusDotSize)
@@ -695,7 +665,6 @@ private fun StatusBadge(
             }
         }
     } else {
-        // Full pill label
         Surface(
             modifier = modifier,
             shape = NovelCardTokens.BadgeShape,
@@ -709,7 +678,8 @@ private fun StatusBadge(
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White,
-                fontSize = 10.sp
+                fontSize = 10.sp,
+                maxLines = 1
             )
         }
     }
@@ -722,63 +692,40 @@ private fun NewChaptersBadge(
     compactMode: Boolean = false
 ) {
     val displayText = remember(count) {
-        when {
-            count > 99 -> "99+"
-            else -> "+$count"
-        }
+        if (count > 99) "99+" else "$count"
     }
 
-    // Subtle pulse animation for attention
-    val infiniteTransition = rememberInfiniteTransition(label = "badge_pulse")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.7f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse_alpha"
-    )
-
     Surface(
-        modifier = modifier.graphicsLayer { alpha = pulseAlpha },
-        shape = if (compactMode) CircleShape else NovelCardTokens.BadgeShape,
+        modifier = modifier,
+        shape = NovelCardTokens.PillShape,
         color = MaterialTheme.colorScheme.primary,
         shadowElevation = NovelCardTokens.Elevation.Badge
     ) {
-        if (compactMode) {
-            Box(
-                modifier = Modifier.padding(6.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = count.coerceAtMost(99).toString(),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    fontSize = 9.sp
-                )
-            }
-        } else {
-            Row(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
+        Row(
+            modifier = Modifier.padding(
+                horizontal = if (compactMode) 6.dp else 8.dp,
+                vertical = if (compactMode) 4.dp else 5.dp
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            if (!compactMode) {
                 Icon(
                     imageVector = Icons.Rounded.NewReleases,
                     contentDescription = null,
                     modifier = Modifier.size(NovelCardTokens.BadgeIconSize),
                     tint = MaterialTheme.colorScheme.onPrimary
                 )
-                Text(
-                    text = displayText,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    fontSize = 11.sp
-                )
             }
+            Text(
+                text = displayText,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimary,
+                fontSize = if (compactMode) 9.sp else 11.sp,
+                maxLines = 1,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
@@ -858,7 +805,6 @@ private fun ComfortableSkeleton(modifier: Modifier = Modifier) {
                 modifier = Modifier.padding(NovelCardTokens.Padding.Comfortable),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Title line 1
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(0.85f)
@@ -866,7 +812,6 @@ private fun ComfortableSkeleton(modifier: Modifier = Modifier) {
                         .clip(RoundedCornerShape(4.dp))
                         .shimmerEffect()
                 )
-                // Title line 2
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(0.6f)
@@ -874,7 +819,6 @@ private fun ComfortableSkeleton(modifier: Modifier = Modifier) {
                         .clip(RoundedCornerShape(4.dp))
                         .shimmerEffect()
                 )
-                // Subtitle
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(0.4f)
@@ -904,7 +848,6 @@ private fun CompactSkeleton(modifier: Modifier = Modifier) {
                     .shimmerEffect()
             )
 
-            // Fake content area at bottom
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
@@ -964,7 +907,6 @@ fun Modifier.shimmerEffect(): Modifier = composed {
             val width = size.width.toFloat()
             val height = size.height.toFloat()
             val shimmerWidth = width * 0.4f
-
             val startX = -shimmerWidth + (width + shimmerWidth * 2) * translateAnim
 
             val brush = Brush.linearGradient(
@@ -979,7 +921,6 @@ fun Modifier.shimmerEffect(): Modifier = composed {
         }
 }
 
-// Extension for border support (if not already defined)
 @Composable
 private fun Modifier.border(
     width: Dp,

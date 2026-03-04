@@ -25,8 +25,15 @@ enum class HistoryDateGroup(val displayName: String) {
 data class HistoryUiState(
     val groupedItems: Map<HistoryDateGroup, List<HistoryItem>> = emptyMap(),
     val totalCount: Int = 0,
+    val filteredCount: Int = 0,
     val isLoading: Boolean = true,
-    val showClearConfirmation: Boolean = false
+    val showClearConfirmation: Boolean = false,
+    // Search
+    val searchQuery: String = "",
+    // Selection
+    val isSelectionMode: Boolean = false,
+    val selectedItems: Set<String> = emptySet(),
+    val showDeleteSelectedConfirmation: Boolean = false
 )
 
 class HistoryViewModel : ViewModel() {
@@ -36,38 +43,64 @@ class HistoryViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(HistoryUiState())
     val uiState: StateFlow<HistoryUiState> = _uiState.asStateFlow()
 
+    private var allItems: List<HistoryItem> = emptyList()
+
     init {
         observeHistory()
     }
 
+    // ================================================================
+    // DATA
+    // ================================================================
+
     private fun observeHistory() {
         viewModelScope.launch {
             historyRepository.observeHistory().collect { items ->
-                val grouped = groupItemsByDate(items)
-                _uiState.update {
-                    it.copy(
-                        groupedItems = grouped,
-                        totalCount = items.size,
-                        isLoading = false
-                    )
-                }
+                allItems = items
+                recompute()
             }
+        }
+    }
+
+    private fun getFilteredItems(): List<HistoryItem> {
+        val query = _uiState.value.searchQuery.trim()
+        return if (query.isBlank()) allItems
+        else allItems.filter { item ->
+            item.novel.name.contains(query, ignoreCase = true) ||
+                    item.chapterName.contains(query, ignoreCase = true) ||
+                    item.novel.apiName.contains(query, ignoreCase = true)
+        }
+    }
+
+    private fun recompute() {
+        val filtered = getFilteredItems()
+        val grouped = groupItemsByDate(filtered)
+
+        val validUrls = allItems.map { it.novel.url }.toSet()
+        val cleanedSelection = _uiState.value.selectedItems.intersect(validUrls)
+
+        _uiState.update {
+            it.copy(
+                groupedItems = grouped,
+                totalCount = allItems.size,
+                filteredCount = filtered.size,
+                isLoading = false,
+                selectedItems = cleanedSelection,
+                isSelectionMode = if (cleanedSelection.isEmpty()) false else it.isSelectionMode
+            )
         }
     }
 
     private fun groupItemsByDate(items: List<HistoryItem>): Map<HistoryDateGroup, List<HistoryItem>> {
         val now = LocalDate.now()
         val zoneId = ZoneId.systemDefault()
-
         return items
             .sortedByDescending { it.timestamp }
             .groupBy { item ->
                 val itemDate = Instant.ofEpochMilli(item.timestamp)
                     .atZone(zoneId)
                     .toLocalDate()
-
                 val daysBetween = ChronoUnit.DAYS.between(itemDate, now)
-
                 when {
                     daysBetween == 0L -> HistoryDateGroup.TODAY
                     daysBetween == 1L -> HistoryDateGroup.YESTERDAY
@@ -77,6 +110,100 @@ class HistoryViewModel : ViewModel() {
                 }
             }
     }
+
+    // ================================================================
+    // SEARCH
+    // ================================================================
+
+    fun updateSearchQuery(query: String) {
+        _uiState.update { it.copy(searchQuery = query) }
+        recompute()
+    }
+
+    // ================================================================
+    // SELECTION
+    // ================================================================
+
+    fun enterSelectionMode(initialNovelUrl: String? = null) {
+        _uiState.update {
+            it.copy(
+                isSelectionMode = true,
+                selectedItems = if (initialNovelUrl != null) setOf(initialNovelUrl) else emptySet()
+            )
+        }
+    }
+
+    fun exitSelectionMode() {
+        _uiState.update {
+            it.copy(isSelectionMode = false, selectedItems = emptySet())
+        }
+    }
+
+    fun toggleSelection(novelUrl: String) {
+        _uiState.update { state ->
+            val newSelection = if (novelUrl in state.selectedItems) {
+                state.selectedItems - novelUrl
+            } else {
+                state.selectedItems + novelUrl
+            }
+            if (newSelection.isEmpty()) {
+                state.copy(isSelectionMode = false, selectedItems = emptySet())
+            } else {
+                state.copy(selectedItems = newSelection)
+            }
+        }
+    }
+
+    fun selectAllVisible() {
+        val filteredUrls = getFilteredItems().map { it.novel.url }.toSet()
+        val currentSelection = _uiState.value.selectedItems
+        val allVisibleSelected =
+            filteredUrls.isNotEmpty() && filteredUrls.all { it in currentSelection }
+
+        val newSelection = if (allVisibleSelected) {
+            currentSelection - filteredUrls
+        } else {
+            currentSelection + filteredUrls
+        }
+
+        _uiState.update {
+            if (newSelection.isEmpty()) {
+                it.copy(isSelectionMode = false, selectedItems = emptySet())
+            } else {
+                it.copy(selectedItems = newSelection)
+            }
+        }
+    }
+
+    fun requestDeleteSelected() {
+        if (_uiState.value.selectedItems.isNotEmpty()) {
+            _uiState.update { it.copy(showDeleteSelectedConfirmation = true) }
+        }
+    }
+
+    fun confirmDeleteSelected() {
+        viewModelScope.launch {
+            val toDelete = _uiState.value.selectedItems.toList()
+            toDelete.forEach { novelUrl ->
+                historyRepository.removeFromHistory(novelUrl)
+            }
+            _uiState.update {
+                it.copy(
+                    isSelectionMode = false,
+                    selectedItems = emptySet(),
+                    showDeleteSelectedConfirmation = false
+                )
+            }
+        }
+    }
+
+    fun dismissDeleteSelectedConfirmation() {
+        _uiState.update { it.copy(showDeleteSelectedConfirmation = false) }
+    }
+
+    // ================================================================
+    // INDIVIDUAL ACTIONS
+    // ================================================================
 
     fun removeFromHistory(novelUrl: String) {
         viewModelScope.launch {
@@ -91,7 +218,14 @@ class HistoryViewModel : ViewModel() {
     fun confirmClearHistory() {
         viewModelScope.launch {
             historyRepository.clearHistory()
-            _uiState.update { it.copy(showClearConfirmation = false) }
+            _uiState.update {
+                it.copy(
+                    showClearConfirmation = false,
+                    isSelectionMode = false,
+                    selectedItems = emptySet(),
+                    searchQuery = ""
+                )
+            }
         }
     }
 

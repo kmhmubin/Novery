@@ -32,8 +32,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,7 +39,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -214,7 +211,6 @@ fun BrowseTab(
     val scope = rememberCoroutineScope()
 
     val dimensions = NoveryTheme.dimensions
-    val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
     val gridColumns = calculateGridColumns(appSettings.searchGridColumns)
     val resultsPerProvider = appSettings.searchResultsPerProvider
 
@@ -267,7 +263,7 @@ fun BrowseTab(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(top = statusBarPadding.calculateTopPadding())
+            .padding()
     ) {
         // Search Bar
         NoverySearchBar(

@@ -3,10 +3,13 @@ package com.emptycastle.novery.ui.screens.about
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.emptycastle.novery.data.update.StartupUpdateChecker
 import com.emptycastle.novery.data.update.UpdateChecker
+import com.emptycastle.novery.data.update.UpdatePreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -15,12 +18,14 @@ data class AboutUiState(
     val isCheckingUpdate: Boolean = false,
     val updateResult: UpdateChecker.UpdateResult? = null,
     val updateError: String? = null,
-    val hasChecked: Boolean = false
+    val hasChecked: Boolean = false,
+    val checkUpdatesOnStartup: Boolean = true
 )
 
 class AboutViewModel(application: Application) : AndroidViewModel(application) {
 
     private val updateChecker = UpdateChecker(application)
+    private val updatePreferences = UpdatePreferences(application)
 
     private val _uiState = MutableStateFlow(AboutUiState())
     val uiState: StateFlow<AboutUiState> = _uiState.asStateFlow()
@@ -29,33 +34,40 @@ class AboutViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update {
             it.copy(currentVersion = updateChecker.getCurrentVersion())
         }
+
+        // Observe startup checker results
+        viewModelScope.launch {
+            combine(
+                StartupUpdateChecker.updateResult,
+                StartupUpdateChecker.isChecking,
+                StartupUpdateChecker.hasChecked,
+                StartupUpdateChecker.error,
+                updatePreferences.checkUpdatesOnStartup
+            ) { result, isChecking, hasChecked, error, checkOnStartup ->
+                _uiState.value.copy(
+                    updateResult = result,
+                    isCheckingUpdate = isChecking,
+                    hasChecked = hasChecked,
+                    updateError = error,
+                    checkUpdatesOnStartup = checkOnStartup
+                )
+            }.collect { newState ->
+                _uiState.value = newState.copy(
+                    currentVersion = updateChecker.getCurrentVersion()
+                )
+            }
+        }
     }
 
     fun checkForUpdate() {
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(isCheckingUpdate = true, updateError = null)
-            }
+            StartupUpdateChecker.checkNow(getApplication())
+        }
+    }
 
-            val result = updateChecker.checkForUpdate()
-
-            result.onSuccess { updateResult ->
-                _uiState.update {
-                    it.copy(
-                        isCheckingUpdate = false,
-                        updateResult = updateResult,
-                        hasChecked = true
-                    )
-                }
-            }.onFailure { error ->
-                _uiState.update {
-                    it.copy(
-                        isCheckingUpdate = false,
-                        updateError = error.message ?: "Failed to check for updates",
-                        hasChecked = true
-                    )
-                }
-            }
+    fun setCheckUpdatesOnStartup(enabled: Boolean) {
+        viewModelScope.launch {
+            updatePreferences.setCheckUpdatesOnStartup(enabled)
         }
     }
 }

@@ -6,13 +6,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -69,7 +67,6 @@ fun RecommendationTab(
     val blockedAuthors by viewModel.blockedAuthors.collectAsState()
     val favoriteAuthors by viewModel.favoriteAuthors.collectAsState()
 
-    val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
     val snackbarHostState = remember { SnackbarHostState() }
     val pullToRefreshState = rememberPullToRefreshState()
     val scope = rememberCoroutineScope()
@@ -106,7 +103,7 @@ fun RecommendationTab(
                 uiState.isSeeding -> {
                     SeedingScreen(
                         progress = uiState.seedingProgress,
-                        modifier = Modifier.padding(top = statusBarPadding.calculateTopPadding())
+                        modifier = Modifier
                     )
                 }
 
@@ -138,7 +135,7 @@ fun RecommendationTab(
                         novelsInProfile = uiState.novelsInProfile,
                         poolSize = uiState.poolSize,
                         onBrowseClick = onNavigateToBrowse,
-                        modifier = Modifier.padding(top = statusBarPadding.calculateTopPadding())
+                        modifier = Modifier
                     )
                 }
 
@@ -153,7 +150,7 @@ fun RecommendationTab(
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
-                            top = statusBarPadding.calculateTopPadding(),
+                            top = 0.dp,
                             bottom = 100.dp
                         ),
                         verticalArrangement = Arrangement.spacedBy(28.dp)

@@ -282,7 +282,7 @@ data class ReaderSettings(
         const val DEFAULT_PARAGRAPH_INDENT = 0f
         const val DEFAULT_MARGIN_HORIZONTAL = 20
         const val DEFAULT_MARGIN_VERTICAL = 16
-        const val DEFAULT_AUTO_HIDE_DELAY = 10000L
+        const val DEFAULT_AUTO_HIDE_DELAY = 0L
 
         const val MIN_AUTO_SCROLL_SPEED = 0.5f
         const val MAX_AUTO_SCROLL_SPEED = 5.0f
