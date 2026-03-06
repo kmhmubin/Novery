@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -49,6 +50,7 @@ fun MoreTab(
     onNavigateToDownloads: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToAbout: () -> Unit,
+    onNavigateToStorage: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: MoreViewModel = viewModel()
 ) {
@@ -131,6 +133,17 @@ fun MoreTab(
                 iconTint = Color(0xFF10B981),
                 badge = if (uiState.activeDownloads > 0) "${uiState.activeDownloads}" else null,
                 onClick = onNavigateToDownloads,
+                modifier = Modifier.padding(horizontal = dimensions.gridPadding)
+            )
+        }
+
+        item(key = "storage_menu") {
+            MoreMenuItem(
+                icon = Icons.Rounded.Storage,
+                title = "Storage & Backup",
+                subtitle = "Manage cache and database backups",
+                iconTint = Color(0xFFF59E0B),
+                onClick = onNavigateToStorage,
                 modifier = Modifier.padding(horizontal = dimensions.gridPadding)
             )
         }

@@ -98,6 +98,9 @@ fun NoveryNavGraph(
                 onNavigateToAbout = {
                     navController.navigate(NavRoutes.About.route)
                 },
+                onNavigateToStorage = {
+                    navController.navigate(NavRoutes.Storage.route)
+                },
                 onNavigateToOnboarding = {
                     navController.navigate(NavRoutes.Onboarding.route)
                 }

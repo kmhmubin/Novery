@@ -3,6 +3,7 @@ package com.emptycastle.novery.ui.screens.downloads
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.emptycastle.novery.data.repository.RepositoryProvider
+import com.emptycastle.novery.service.DownloadPriority
 import com.emptycastle.novery.service.DownloadServiceManager
 import com.emptycastle.novery.service.DownloadState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,7 +19,7 @@ data class DownloadedNovel(
     val sourceName: String,
     val downloadedChapters: Int,
     val totalChapters: Int = 0,
-    val lastDownloadedAt: Long = 0L  // Timestamp of most recent download
+    val lastDownloadedAt: Long = 0L
 )
 
 data class ActiveDownload(
@@ -31,7 +32,23 @@ data class ActiveDownload(
     val progress: Float,
     val isPaused: Boolean = false,
     val speed: String = "",
-    val eta: String = ""
+    val eta: String = "",
+    val priority: DownloadPriority = DownloadPriority.NORMAL,
+    val successCount: Int = 0,
+    val failedCount: Int = 0,
+    val skippedCount: Int = 0
+)
+
+data class FailedDownload(
+    val novelUrl: String,
+    val novelName: String,
+    val coverUrl: String?,
+    val sourceName: String,
+    val failedChapterCount: Int,
+    val failedChapterUrls: List<String>,
+    val failedChapterNames: List<String>,
+    val errorMessage: String,
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 enum class DownloadSortOrder {
@@ -43,6 +60,7 @@ data class DownloadsUiState(
     val isLoading: Boolean = true,
     val downloadedNovels: List<DownloadedNovel> = emptyList(),
     val activeDownloads: List<ActiveDownload> = emptyList(),
+    val failedDownloads: List<FailedDownload> = emptyList(),
     val totalStorageUsed: String = "0 MB",
     val sortOrder: DownloadSortOrder = DownloadSortOrder.NEWEST_FIRST
 )
@@ -55,13 +73,14 @@ class DownloadsViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(DownloadsUiState())
     val uiState: StateFlow<DownloadsUiState> = _uiState.asStateFlow()
 
-    // Track previous download state for detecting completions
     private var previousActiveNovelUrl: String? = null
     private var wasDownloadActive: Boolean = false
     private var previousQueueSize: Int = 0
 
-    // Cache unsorted novels for re-sorting without reloading
     private var cachedNovels: List<DownloadedNovel> = emptyList()
+
+    // Track failed downloads locally
+    private val failedDownloadsMap = mutableMapOf<String, FailedDownload>()
 
     init {
         observeActiveDownloads()
@@ -95,7 +114,11 @@ class DownloadsViewModel : ViewModel() {
                     progress = downloadState.progressPercent,
                     isPaused = downloadState.isPaused,
                     speed = downloadState.formattedSpeed,
-                    eta = downloadState.estimatedTimeRemaining
+                    eta = downloadState.estimatedTimeRemaining,
+                    priority = DownloadPriority.NORMAL, // Current download doesn't have priority info
+                    successCount = downloadState.successCount,
+                    failedCount = downloadState.failedCount,
+                    skippedCount = downloadState.skippedCount
                 )
             )
         }
@@ -111,28 +134,37 @@ class DownloadsViewModel : ViewModel() {
                     downloadedCount = 0,
                     totalCount = queued.chapterCount,
                     progress = 0f,
-                    isPaused = false
+                    isPaused = false,
+                    priority = queued.priority
                 )
             )
         }
 
-        _uiState.update { it.copy(activeDownloads = activeList) }
+        _uiState.update {
+            it.copy(
+                activeDownloads = activeList,
+                failedDownloads = failedDownloadsMap.values.toList()
+            )
+        }
 
-        // Detect completion scenarios that require refreshing the downloaded novels list
+        // Detect completion with failures
+        if (wasDownloadActive && !isCurrentlyActive && !downloadState.isPaused) {
+            // Check if there were failures
+            if (downloadState.failedCount > 0 && previousActiveNovelUrl != null) {
+                // A download just completed with failures - this would need
+                // info from DownloadService about which chapters failed
+                // For now, we track via the error callback
+            }
+        }
+
+        // Detect completion scenarios
         val shouldRefresh = when {
-            // Case 1: Download was active and is now complete (not active, not paused)
             wasDownloadActive && !isCurrentlyActive && !downloadState.isPaused -> true
-
-            // Case 2: Active novel URL changed (previous download completed, new one started from queue)
-            wasDownloadActive &&
-                    isCurrentlyActive &&
+            wasDownloadActive && isCurrentlyActive &&
                     previousActiveNovelUrl != null &&
                     currentNovelUrl != null &&
                     currentNovelUrl != previousActiveNovelUrl -> true
-
-            // Case 3: Queue shrunk (a queued item was removed because it started or completed)
             currentQueueSize < previousQueueSize && wasDownloadActive -> true
-
             else -> false
         }
 
@@ -140,7 +172,6 @@ class DownloadsViewModel : ViewModel() {
             loadDownloads()
         }
 
-        // Update tracking state for next comparison
         previousActiveNovelUrl = currentNovelUrl
         wasDownloadActive = isCurrentlyActive
         previousQueueSize = currentQueueSize
@@ -151,21 +182,15 @@ class DownloadsViewModel : ViewModel() {
             _uiState.update { it.copy(isLoading = true) }
 
             try {
-                // Get all novels with download counts and last download time
                 val downloadInfo = offlineRepository.getAllDownloadInfo()
 
                 val downloadedNovels = downloadInfo.mapNotNull { info ->
                     if (info.chapterCount <= 0) return@mapNotNull null
 
                     val novelUrl = info.novelUrl
-
-                    // Try to get novel details from offline cache first
                     val offlineDetails = offlineRepository.getNovelDetails(novelUrl)
-
-                    // If not in offline cache, try library
                     val libraryItem = libraryRepository.getLibraryItem(novelUrl)
 
-                    // Get the best available info
                     val novelName = offlineDetails?.name
                         ?: libraryItem?.novel?.name
                         ?: extractNameFromUrl(novelUrl)
@@ -186,11 +211,9 @@ class DownloadsViewModel : ViewModel() {
                     )
                 }
 
-                // Cache and sort
                 cachedNovels = downloadedNovels
                 val sortedNovels = sortNovels(downloadedNovels, _uiState.value.sortOrder)
 
-                // Calculate approximate storage (rough estimate: ~10KB per chapter average)
                 val totalChapters = downloadInfo.sumOf { it.chapterCount }
                 val estimatedMB = (totalChapters * 10) / 1024.0
                 val storageString = if (estimatedMB < 1) {
@@ -203,7 +226,8 @@ class DownloadsViewModel : ViewModel() {
                     it.copy(
                         isLoading = false,
                         downloadedNovels = sortedNovels,
-                        totalStorageUsed = storageString
+                        totalStorageUsed = storageString,
+                        failedDownloads = failedDownloadsMap.values.toList()
                     )
                 }
 
@@ -220,12 +244,10 @@ class DownloadsViewModel : ViewModel() {
             DownloadSortOrder.OLDEST_FIRST -> DownloadSortOrder.NEWEST_FIRST
         }
 
-        val sortedNovels = sortNovels(cachedNovels, newOrder)
-
         _uiState.update {
             it.copy(
                 sortOrder = newOrder,
-                downloadedNovels = sortedNovels
+                downloadedNovels = sortNovels(cachedNovels, newOrder)
             )
         }
     }
@@ -244,6 +266,12 @@ class DownloadsViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 offlineRepository.deleteNovelDownloads(novelUrl)
+                cachedNovels = cachedNovels.filter { it.novelUrl != novelUrl }
+                _uiState.update { state ->
+                    state.copy(
+                        downloadedNovels = state.downloadedNovels.filter { it.novelUrl != novelUrl }
+                    )
+                }
                 loadDownloads()
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -259,14 +287,94 @@ class DownloadsViewModel : ViewModel() {
         DownloadServiceManager.resumeDownload()
     }
 
-    fun cancelDownload() {
+    fun cancelCurrentDownload() {
+        DownloadServiceManager.cancelCurrentDownload()
+        loadDownloads()
+    }
+
+    fun cancelAllDownloads() {
         DownloadServiceManager.cancelDownload()
-        // Refresh immediately when cancelled to update the list
         loadDownloads()
     }
 
     fun removeFromQueue(novelUrl: String) {
         DownloadServiceManager.removeFromQueue(novelUrl)
+    }
+
+    // Queue reordering methods
+    fun moveToTop(novelUrl: String) {
+        DownloadServiceManager.moveToTop(novelUrl)
+    }
+
+    fun moveToBottom(novelUrl: String) {
+        DownloadServiceManager.moveToBottom(novelUrl)
+    }
+
+    fun moveUp(novelUrl: String) {
+        DownloadServiceManager.moveUp(novelUrl)
+    }
+
+    fun moveDown(novelUrl: String) {
+        DownloadServiceManager.moveDown(novelUrl)
+    }
+
+    fun reorderQueue(fromIndex: Int, toIndex: Int) {
+        DownloadServiceManager.reorderQueue(fromIndex, toIndex)
+    }
+
+    // Failed downloads management
+    fun retryFailedDownload(failed: FailedDownload) {
+        viewModelScope.launch {
+            // Remove from failed list
+            failedDownloadsMap.remove(failed.novelUrl)
+            _uiState.update {
+                it.copy(failedDownloads = failedDownloadsMap.values.toList())
+            }
+
+            // Re-queue the failed chapters
+            DownloadServiceManager.retryFailedChapters(
+                novelUrl = failed.novelUrl,
+                novelName = failed.novelName,
+                novelCoverUrl = failed.coverUrl,
+                sourceName = failed.sourceName,
+                chapterUrls = failed.failedChapterUrls,
+                chapterNames = failed.failedChapterNames
+            )
+        }
+    }
+
+    fun dismissFailedDownload(novelUrl: String) {
+        failedDownloadsMap.remove(novelUrl)
+        _uiState.update {
+            it.copy(failedDownloads = failedDownloadsMap.values.toList())
+        }
+    }
+
+    // Called when a download completes with failures
+    fun recordFailedDownload(
+        novelUrl: String,
+        novelName: String,
+        coverUrl: String?,
+        sourceName: String,
+        failedChapterUrls: List<String>,
+        failedChapterNames: List<String>,
+        errorMessage: String
+    ) {
+        if (failedChapterUrls.isNotEmpty()) {
+            failedDownloadsMap[novelUrl] = FailedDownload(
+                novelUrl = novelUrl,
+                novelName = novelName,
+                coverUrl = coverUrl,
+                sourceName = sourceName,
+                failedChapterCount = failedChapterUrls.size,
+                failedChapterUrls = failedChapterUrls,
+                failedChapterNames = failedChapterNames,
+                errorMessage = errorMessage
+            )
+            _uiState.update {
+                it.copy(failedDownloads = failedDownloadsMap.values.toList())
+            }
+        }
     }
 
     private fun extractNameFromUrl(url: String): String {

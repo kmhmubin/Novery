@@ -565,6 +565,108 @@ class DownloadService : Service() {
         safeStopSelf()
     }
 
+    // ================================================================
+    // QUEUE REORDERING
+    // ================================================================
+
+    /**
+     * Move an item to the top of the queue
+     */
+    fun moveToTop(novelUrl: String) {
+        val item = downloadQueue.find { it.novelUrl == novelUrl } ?: return
+        downloadQueue.remove(item)
+        downloadQueue.addFirst(item)
+        updateQueueState()
+    }
+
+    /**
+     * Move an item to the bottom of the queue
+     */
+    fun moveToBottom(novelUrl: String) {
+        val item = downloadQueue.find { it.novelUrl == novelUrl } ?: return
+        downloadQueue.remove(item)
+        downloadQueue.addLast(item)
+        updateQueueState()
+    }
+
+    /**
+     * Move an item up one position in the queue
+     */
+    fun moveUp(novelUrl: String) {
+        val list = downloadQueue.toMutableList()
+        val index = list.indexOfFirst { it.novelUrl == novelUrl }
+        if (index > 0) {
+            val item = list.removeAt(index)
+            list.add(index - 1, item)
+            downloadQueue.clear()
+            downloadQueue.addAll(list)
+            updateQueueState()
+        }
+    }
+
+    /**
+     * Move an item down one position in the queue
+     */
+    fun moveDown(novelUrl: String) {
+        val list = downloadQueue.toMutableList()
+        val index = list.indexOfFirst { it.novelUrl == novelUrl }
+        if (index >= 0 && index < list.lastIndex) {
+            val item = list.removeAt(index)
+            list.add(index + 1, item)
+            downloadQueue.clear()
+            downloadQueue.addAll(list)
+            updateQueueState()
+        }
+    }
+
+    /**
+     * Reorder queue by moving an item from one position to another
+     */
+    fun reorderQueue(fromIndex: Int, toIndex: Int) {
+        if (fromIndex == toIndex) return
+
+        val list = downloadQueue.toMutableList()
+        if (fromIndex !in list.indices || toIndex !in list.indices) return
+
+        val item = list.removeAt(fromIndex)
+        list.add(toIndex, item)
+
+        downloadQueue.clear()
+        downloadQueue.addAll(list)
+        updateQueueState()
+    }
+
+    /**
+     * Cancel only the current download, then process next in queue
+     */
+    fun cancelCurrentDownload() {
+        Log.d(TAG, "cancelCurrentDownload - queue will continue")
+
+        downloadJob?.cancel()
+        stopPeriodicNotificationUpdates()
+
+        // Cancel the current notification
+        try {
+            NotificationHelper.cancelNotification(this, currentNotificationId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cancelling notification", e)
+        }
+
+        // Reset current state but keep queue
+        _downloadState.update { state ->
+            DownloadState(
+                queuedDownloads = state.queuedDownloads,
+                totalQueuedChapters = state.totalQueuedChapters
+            )
+        }
+
+        currentRequest = null
+        cachedCoverBitmap = null
+
+        // Process next in queue (if any)
+        processNextInQueue()
+    }
+
     fun skipCurrentChapter() {
         pausedAtIndex++
         if (_downloadState.value.isPaused) {

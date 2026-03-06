@@ -357,6 +357,86 @@ object DownloadServiceManager {
         service?.skipCurrentChapter()
     }
 
+    // Queue reordering methods
+    fun moveToTop(novelUrl: String) {
+        scope.launch {
+            connectionMutex.withLock {
+                service?.moveToTop(novelUrl)
+            }
+        }
+    }
+
+    fun moveToBottom(novelUrl: String) {
+        scope.launch {
+            connectionMutex.withLock {
+                service?.moveToBottom(novelUrl)
+            }
+        }
+    }
+
+    fun moveUp(novelUrl: String) {
+        scope.launch {
+            connectionMutex.withLock {
+                service?.moveUp(novelUrl)
+            }
+        }
+    }
+
+    fun moveDown(novelUrl: String) {
+        scope.launch {
+            connectionMutex.withLock {
+                service?.moveDown(novelUrl)
+            }
+        }
+    }
+
+    fun reorderQueue(fromIndex: Int, toIndex: Int) {
+        scope.launch {
+            connectionMutex.withLock {
+                service?.reorderQueue(fromIndex, toIndex)
+            }
+        }
+    }
+
+    /**
+     * Cancel only the current download, let queued items continue
+     */
+    fun cancelCurrentDownload() {
+        scope.launch {
+            connectionMutex.withLock {
+                service?.cancelCurrentDownload()
+            }
+        }
+    }
+
+    /**
+     * Retry failed chapters for a novel
+     */
+    fun retryFailedChapters(
+        novelUrl: String,
+        novelName: String,
+        novelCoverUrl: String?,
+        sourceName: String,
+        chapterUrls: List<String>,
+        chapterNames: List<String>
+    ) {
+        if (chapterUrls.isEmpty()) return
+
+        val context = bindingContextRef?.get() ?: return
+
+        val request = DownloadRequest(
+            novelUrl = novelUrl,
+            novelName = novelName,
+            novelCoverUrl = novelCoverUrl,
+            providerName = sourceName,
+            chapterUrls = chapterUrls,
+            chapterNames = chapterNames,
+            priority = DownloadPriority.HIGH // Retry with high priority
+        )
+
+        startDownload(context, request)
+    }
+
     // ================================================================
     // STATE QUERIES
     // ================================================================

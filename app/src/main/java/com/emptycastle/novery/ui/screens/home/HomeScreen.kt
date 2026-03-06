@@ -34,6 +34,7 @@ fun HomeScreen(
     onNavigateToProfile: () -> Unit,
     onNavigateToDownloads: () -> Unit,
     onNavigateToAbout: () -> Unit,
+    onNavigateToStorage: () -> Unit,
     onNavigateToOnboarding: () -> Unit = {}
 ) {
     // Initialize shared state
@@ -114,7 +115,8 @@ fun HomeScreen(
                         onNavigateToProfile = onNavigateToProfile,
                         onNavigateToDownloads = onNavigateToDownloads,
                         onNavigateToAbout = { onNavigateToAbout() },
-                        onNavigateToSettings = onNavigateToSettings
+                        onNavigateToSettings = onNavigateToSettings,
+                        onNavigateToStorage = onNavigateToStorage
                     )
                 }
             }
