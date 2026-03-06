@@ -1,8 +1,14 @@
 package com.emptycastle.novery.ui.screens.downloads
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.emptycastle.novery.data.repository.RepositoryProvider
+import com.emptycastle.novery.epub.EpubExportOptions
+import com.emptycastle.novery.epub.EpubExportResult
+import com.emptycastle.novery.epub.EpubExportState
+import com.emptycastle.novery.epub.EpubExporter
 import com.emptycastle.novery.service.DownloadPriority
 import com.emptycastle.novery.service.DownloadServiceManager
 import com.emptycastle.novery.service.DownloadState
@@ -85,6 +91,36 @@ class DownloadsViewModel : ViewModel() {
     init {
         observeActiveDownloads()
     }
+
+    private var epubExporter: EpubExporter? = null
+
+    val epubExportState: StateFlow<EpubExportState>
+        get() = epubExporter?.exportState ?: MutableStateFlow(EpubExportState()).asStateFlow()
+
+    fun initializeExporter(context: Context) {
+        if (epubExporter == null) {
+            epubExporter = EpubExporter(context, offlineRepository)
+        }
+    }
+
+    suspend fun exportNovelToEpub(
+        novelUrl: String,
+        outputUri: Uri,
+        options: EpubExportOptions = EpubExportOptions()
+    ): EpubExportResult {
+        return epubExporter?.exportToEpub(novelUrl, outputUri, options)
+            ?: EpubExportResult(success = false, error = "Exporter not initialized")
+    }
+
+    fun generateEpubFileName(novelName: String): String {
+        return epubExporter?.generateFileName(novelName)
+            ?: "${novelName.take(50)}.epub"
+    }
+
+    fun resetExportState() {
+        epubExporter?.resetState()
+    }
+
 
     private fun observeActiveDownloads() {
         viewModelScope.launch {

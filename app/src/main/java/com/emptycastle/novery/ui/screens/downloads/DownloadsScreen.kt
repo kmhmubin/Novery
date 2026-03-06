@@ -1,5 +1,7 @@
 package com.emptycastle.novery.ui.screens.downloads
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -30,6 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.rounded.ArrowDownward
@@ -39,9 +42,9 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Downloading
+import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -70,7 +73,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -102,6 +104,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -113,7 +116,9 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.emptycastle.novery.epub.EpubExportOptions
 import com.emptycastle.novery.service.DownloadPriority
+import com.emptycastle.novery.ui.screens.downloads.components.EpubExportDialog
 import com.emptycastle.novery.ui.theme.NoveryTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -131,6 +136,7 @@ fun DownloadsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
 
     // Dialog states
     var showDeleteDialog by remember { mutableStateOf<DownloadedNovel?>(null) }
@@ -142,6 +148,39 @@ fun DownloadsScreen(
     // Pull to refresh
     val pullToRefreshState = rememberPullToRefreshState()
     var isRefreshing by remember { mutableStateOf(false) }
+
+    var showExportDialog by remember { mutableStateOf<DownloadedNovel?>(null) }
+    var exportOptions by remember { mutableStateOf(EpubExportOptions()) }
+    var pendingExportNovel by remember { mutableStateOf<DownloadedNovel?>(null) }
+    val exportState by viewModel.epubExportState.collectAsStateWithLifecycle()
+
+    // Initialize exporter
+    LaunchedEffect(Unit) {
+        viewModel.initializeExporter(context)
+    }
+
+    // File picker for export
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/epub+zip")
+    ) { uri ->
+        uri?.let { outputUri ->
+            pendingExportNovel?.let { novel ->
+                scope.launch {
+                    val result = viewModel.exportNovelToEpub(
+                        novelUrl = novel.novelUrl,
+                        outputUri = outputUri,
+                        options = exportOptions
+                    )
+                    if (result.success) {
+                        snackbarHostState.showSnackbar(
+                            "Exported ${result.chapterCount} chapters (${result.formattedFileSize})"
+                        )
+                    }
+                }
+            }
+        }
+        pendingExportNovel = null
+    }
 
     LaunchedEffect(Unit) {
         viewModel.loadDownloads()
@@ -247,6 +286,9 @@ fun DownloadsScreen(
                                     duration = SnackbarDuration.Short
                                 )
                             }
+                        },
+                        onExportClick = { novel ->
+                            showExportDialog = novel
                         },
                         onPauseClick = { viewModel.pauseDownload() },
                         onResumeClick = { viewModel.resumeDownload() },
@@ -533,6 +575,25 @@ fun DownloadsScreen(
         )
     }
 
+    // Export dialog
+    showExportDialog?.let { novel ->
+        EpubExportDialog(
+            novel = novel,
+            exportState = exportState,
+            options = exportOptions,
+            onOptionsChange = { exportOptions = it },
+            onExport = {
+                pendingExportNovel = novel
+                exportLauncher.launch(viewModel.generateEpubFileName(novel.novelName))
+            },
+            onDismiss = {
+                showExportDialog = null
+                viewModel.resetExportState()
+                exportOptions = EpubExportOptions()
+            }
+        )
+    }
+
     // Retry failed download dialog
     showRetryDialog?.let { failed ->
         AlertDialog(
@@ -602,6 +663,7 @@ private fun DownloadsContent(
     onNovelClick: (DownloadedNovel) -> Unit,
     onDeleteClick: (DownloadedNovel) -> Unit,
     onSwipeDelete: (DownloadedNovel) -> Unit,
+    onExportClick: (DownloadedNovel) -> Unit,
     onPauseClick: () -> Unit,
     onResumeClick: () -> Unit,
     onCancelActiveClick: () -> Unit,
@@ -745,8 +807,7 @@ private fun DownloadsContent(
                                     change.consume()
                                     dragOffset += dragAmount.y
 
-                                    // Calculate target index based on drag position
-                                    val itemHeight = 80.dp.toPx() // Approximate item height
+                                    val itemHeight = 80.dp.toPx()
                                     val draggedPositions = (dragOffset / itemHeight).roundToInt()
                                     val targetIndex = (index + draggedPositions)
                                         .coerceIn(0, queuedDownloads.lastIndex)
@@ -805,7 +866,8 @@ private fun DownloadsContent(
                     novel = novel,
                     onClick = { onNovelClick(novel) },
                     onDeleteClick = { onDeleteClick(novel) },
-                    onSwipeDelete = { onSwipeDelete(novel) }
+                    onSwipeDelete = { onSwipeDelete(novel) },
+                    onExportClick = { onExportClick(novel) }
                 )
             }
         }
@@ -848,7 +910,6 @@ private fun StorageSummaryCard(
                 StorageStatItem(value = storageUsed, label = "Storage")
             }
 
-            // Status indicators
             if (activeCount > 0 || failedCount > 0) {
                 Spacer(Modifier.height(12.dp))
                 Row(
@@ -959,7 +1020,6 @@ private fun FailedDownloadCard(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Error icon
             Surface(
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
@@ -978,7 +1038,6 @@ private fun FailedDownloadCard(
                 }
             }
 
-            // Info
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -1006,7 +1065,6 @@ private fun FailedDownloadCard(
                 }
             }
 
-            // Actions
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 IconButton(
                     onClick = onRetryClick,
@@ -1070,7 +1128,6 @@ private fun CurrentDownloadCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Cover
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -1099,7 +1156,6 @@ private fun CurrentDownloadCard(
                     }
                 }
 
-                // Download info
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -1116,7 +1172,6 @@ private fun CurrentDownloadCard(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
                         )
-                        // Priority badge
                         PriorityBadge(priority = download.priority)
                     }
 
@@ -1129,7 +1184,6 @@ private fun CurrentDownloadCard(
                     )
                 }
 
-                // Control buttons
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     IconButton(
                         onClick = if (download.isPaused) onResumeClick else onPauseClick,
@@ -1160,7 +1214,6 @@ private fun CurrentDownloadCard(
                 }
             }
 
-            // Progress section
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1224,12 +1277,10 @@ private fun CurrentDownloadCard(
                     trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                 )
 
-                // Stats row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // Success/Failed counts
                     if (download.successCount > 0 || download.failedCount > 0) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (download.successCount > 0) {
@@ -1251,7 +1302,6 @@ private fun CurrentDownloadCard(
                         Spacer(Modifier.width(1.dp))
                     }
 
-                    // ETA
                     if (!download.isPaused && download.eta.isNotBlank() && download.eta != "--:--") {
                         Text(
                             text = "~${download.eta} remaining",
@@ -1347,7 +1397,6 @@ private fun QueuedDownloadCard(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Drag handle
             Icon(
                 imageVector = Icons.Rounded.DragHandle,
                 contentDescription = "Drag to reorder",
@@ -1355,7 +1404,6 @@ private fun QueuedDownloadCard(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
             )
 
-            // Position badge
             Surface(
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -1374,7 +1422,6 @@ private fun QueuedDownloadCard(
                 }
             }
 
-            // Cover
             Surface(
                 shape = RoundedCornerShape(8.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -1402,7 +1449,6 @@ private fun QueuedDownloadCard(
                 }
             }
 
-            // Info
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -1428,7 +1474,6 @@ private fun QueuedDownloadCard(
                 )
             }
 
-            // Quick move buttons
             Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
                 if (position > 1) {
                     IconButton(
@@ -1458,7 +1503,6 @@ private fun QueuedDownloadCard(
                 }
             }
 
-            // More menu
             Box {
                 IconButton(
                     onClick = { showMenu = true },
@@ -1541,7 +1585,8 @@ private fun SwipeableDownloadedNovelCard(
     novel: DownloadedNovel,
     onClick: () -> Unit,
     onDeleteClick: () -> Unit,
-    onSwipeDelete: () -> Unit
+    onSwipeDelete: () -> Unit,
+    onExportClick: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
     var dismissed by remember { mutableStateOf(false) }
@@ -1596,7 +1641,8 @@ private fun SwipeableDownloadedNovelCard(
             DownloadedNovelCard(
                 novel = novel,
                 onClick = onClick,
-                onDeleteClick = onDeleteClick
+                onDeleteClick = onDeleteClick,
+                onExportClick = onExportClick
             )
         }
     }
@@ -1606,7 +1652,8 @@ private fun SwipeableDownloadedNovelCard(
 private fun DownloadedNovelCard(
     novel: DownloadedNovel,
     onClick: () -> Unit,
-    onDeleteClick: () -> Unit
+    onDeleteClick: () -> Unit,
+    onExportClick: () -> Unit
 ) {
     Card(
         onClick = onClick,
@@ -1707,15 +1754,31 @@ private fun DownloadedNovelCard(
                 }
             }
 
-            IconButton(
-                onClick = onDeleteClick,
-                modifier = Modifier.size(40.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Delete,
-                    contentDescription = "Delete downloads",
-                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
-                )
+            // Action buttons row
+            Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+                // Export button
+                IconButton(
+                    onClick = onExportClick,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Book,
+                        contentDescription = "Export to EPUB",
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                    )
+                }
+
+                // Delete button
+                IconButton(
+                    onClick = onDeleteClick,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Delete,
+                        contentDescription = "Delete downloads",
+                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
+                    )
+                }
             }
         }
     }
