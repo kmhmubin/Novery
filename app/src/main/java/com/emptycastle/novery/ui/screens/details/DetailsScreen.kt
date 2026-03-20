@@ -1,7 +1,10 @@
 package com.emptycastle.novery.ui.screens.details
 
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -30,8 +33,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -44,6 +50,7 @@ import com.emptycastle.novery.domain.model.Chapter
 import com.emptycastle.novery.domain.model.Novel
 import com.emptycastle.novery.domain.model.NovelDetails
 import com.emptycastle.novery.domain.model.UserReview
+import com.emptycastle.novery.epub.EpubExportOptions
 import com.emptycastle.novery.service.DownloadServiceManager
 import com.emptycastle.novery.service.DownloadState
 import com.emptycastle.novery.ui.components.FullScreenLoading
@@ -73,6 +80,8 @@ import com.emptycastle.novery.ui.screens.details.components.SynopsisSection
 import com.emptycastle.novery.ui.screens.details.components.TagsRow
 import com.emptycastle.novery.ui.screens.details.components.createSelectionCallbacks
 import com.emptycastle.novery.ui.screens.details.components.createSelectionState
+import com.emptycastle.novery.ui.screens.downloads.DownloadedNovel
+import com.emptycastle.novery.ui.screens.downloads.components.EpubExportDialog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -94,6 +103,7 @@ fun DetailsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val downloadState by DownloadServiceManager.downloadState.collectAsStateWithLifecycle()
+    val epubExportState by viewModel.epubExportState.collectAsStateWithLifecycle()
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -102,6 +112,26 @@ fun DetailsScreen(
     val isDownloadingThisNovel = downloadState.isActive && downloadState.novelUrl == novelUrl
     val filteredChapters = uiState.filteredChapters
     val displayedChapters = uiState.displayedChapters
+
+    // EPUB export state
+    var showEpubExportDialog by rememberSaveable { mutableStateOf(false) }
+    var epubExportOptions by remember { mutableStateOf(EpubExportOptions()) }
+    var pendingExportUri by remember { mutableStateOf<Uri?>(null) }
+
+    // Initialize exporter
+    LaunchedEffect(Unit) {
+        viewModel.initializeExporter(context)
+    }
+
+    // File picker launcher for EPUB export
+    val epubFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/epub+zip")
+    ) { uri ->
+        if (uri != null) {
+            pendingExportUri = uri
+            showEpubExportDialog = true
+        }
+    }
 
     // Handle back press in selection mode
     BackHandler(enabled = uiState.isSelectionMode) {
@@ -131,6 +161,47 @@ fun DetailsScreen(
         context = context,
         novelUrl = novelUrl
     )
+
+    // EPUB Export Dialog
+    if (showEpubExportDialog && uiState.novelDetails != null) {
+        val downloadedNovel = DownloadedNovel(
+            novelUrl = novelUrl,
+            novelName = uiState.novelDetails!!.name,
+            coverUrl = uiState.novelDetails!!.posterUrl,
+            sourceName = providerName,
+            downloadedChapters = viewModel.getDownloadedChapterCount()
+        )
+
+        EpubExportDialog(
+            novel = downloadedNovel,
+            exportState = epubExportState,
+            options = epubExportOptions,
+            onOptionsChange = { epubExportOptions = it },
+            onExport = {
+                pendingExportUri?.let { uri ->
+                    scope.launch {
+                        viewModel.exportNovelToEpub(uri, epubExportOptions)
+                    }
+                }
+            },
+            onDismiss = {
+                showEpubExportDialog = false
+                pendingExportUri = null
+                viewModel.resetExportState()
+                epubExportOptions = EpubExportOptions()
+            },
+            onShare = {
+                pendingExportUri?.let { uri ->
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "application/epub+zip"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(Intent.createChooser(shareIntent, "Share EPUB"))
+                }
+            }
+        )
+    }
 
     // Main content
     Box(
@@ -183,7 +254,18 @@ fun DetailsScreen(
                                         onChapterClick = onChapterClick,
                                         onNovelClick = onNovelClick,
                                         onOpenInWebView = onOpenInWebView,
-                                        onNavigateToDownloads = onNavigateToDownloads, // Pass it here!
+                                        onNavigateToDownloads = onNavigateToDownloads,
+                                        onExportEpub = {
+                                            if (viewModel.hasDownloadedChapters()) {
+                                                epubFilePicker.launch(viewModel.generateEpubFileName())
+                                            } else {
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    "No downloaded chapters to export",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        },
                                         onHapticFeedback = { type ->
                                             haptic.performHapticFeedback(type)
                                         },
@@ -207,7 +289,18 @@ fun DetailsScreen(
                                     onChapterClick = onChapterClick,
                                     onNovelClick = onNovelClick,
                                     onOpenInWebView = onOpenInWebView,
-                                    onNavigateToDownloads = onNavigateToDownloads, // Pass it here!
+                                    onNavigateToDownloads = onNavigateToDownloads,
+                                    onExportEpub = {
+                                        if (viewModel.hasDownloadedChapters()) {
+                                            epubFilePicker.launch(viewModel.generateEpubFileName())
+                                        } else {
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                "No downloaded chapters to export",
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    },
                                     onHapticFeedback = { type ->
                                         haptic.performHapticFeedback(type)
                                     },
@@ -415,7 +508,8 @@ private fun DetailsContent(
     onChapterClick: (String, String, String) -> Unit,
     onNovelClick: (String, String) -> Unit,
     onOpenInWebView: (String, String) -> Unit,
-    onNavigateToDownloads: () -> Unit,  // No default value - must be passed!
+    onNavigateToDownloads: () -> Unit,
+    onExportEpub: () -> Unit,
     onHapticFeedback: (HapticFeedbackType) -> Unit,
     onTabSelected: (DetailsTab) -> Unit,
     viewModel: DetailsViewModel,
@@ -456,7 +550,8 @@ private fun DetailsContent(
                 },
                 onOpenInWebView = {
                     onOpenInWebView(providerName, details.url)
-                }
+                },
+                onExportEpub = onExportEpub
             )
         }
 
@@ -474,7 +569,7 @@ private fun DetailsContent(
                     }
                 },
                 onDownload = { viewModel.showDownloadMenu() },
-                onViewDownloads = onNavigateToDownloads  // Now properly passed!
+                onViewDownloads = onNavigateToDownloads
             )
         }
 

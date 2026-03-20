@@ -41,6 +41,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.filled.Circle
+import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.Check
@@ -48,11 +49,14 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.ZoomOutMap
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -114,6 +118,7 @@ fun NovelHeader(
     onCoverClick: () -> Unit,
     onShare: (() -> Unit)? = null,
     onOpenInWebView: (() -> Unit)? = null,
+    onExportEpub: (() -> Unit)? = null,  // Add this parameter
     modifier: Modifier = Modifier
 ) {
     val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -132,7 +137,8 @@ fun NovelHeader(
             HeaderTopBar(
                 onBack = onBack,
                 onShare = onShare,
-                onOpenInWebView = onOpenInWebView
+                onOpenInWebView = onOpenInWebView,
+                onExportEpub = onExportEpub
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -222,8 +228,11 @@ private fun HeaderBackground(
 private fun HeaderTopBar(
     onBack: () -> Unit,
     onShare: (() -> Unit)?,
-    onOpenInWebView: (() -> Unit)?
+    onOpenInWebView: (() -> Unit)?,
+    onExportEpub: (() -> Unit)? = null
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -243,34 +252,72 @@ private fun HeaderTopBar(
             )
         }
 
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (onShare != null) {
-                GlassIconButton(
-                    onClick = onShare,
-                    contentDescription = "Share novel"
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Share,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = Color.White
-                    )
-                }
+        // Three-dot menu
+        Box {
+            GlassIconButton(
+                onClick = { showMenu = true },
+                contentDescription = "More options"
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.MoreVert,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                    tint = Color.White
+                )
             }
 
-            if (onOpenInWebView != null) {
-                GlassIconButton(
-                    onClick = onOpenInWebView,
-                    contentDescription = "Open in browser"
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Language,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = Color.White
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false }
+            ) {
+                if (onShare != null) {
+                    DropdownMenuItem(
+                        text = { Text("Share") },
+                        onClick = {
+                            showMenu = false
+                            onShare()
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Share,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    )
+                }
+
+                if (onExportEpub != null) {
+                    DropdownMenuItem(
+                        text = { Text("Export as EPUB") },
+                        onClick = {
+                            showMenu = false
+                            onExportEpub()
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.Book,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    )
+                }
+
+                if (onOpenInWebView != null) {
+                    DropdownMenuItem(
+                        text = { Text("Open in browser") },
+                        onClick = {
+                            showMenu = false
+                            onOpenInWebView()
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Language,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     )
                 }
             }

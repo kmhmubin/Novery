@@ -945,16 +945,21 @@ class ReaderViewModel : ViewModel() {
      */
     private fun handleTTSPlaybackComplete() {
         val state = _uiState.value
+        val currentChapterIndex = state.currentTTSChapterIndex
 
-        Log.d(TAG, "TTS playback complete - chapter ${state.currentTTSChapterIndex}")
+        // If TTS chapter index is invalid, just stop
+        if (currentChapterIndex < 0) {
+            Log.d(TAG, "TTS chapter index invalid, stopping")
+            stopTTSInternal()
+            return
+        }
 
-        val isLastChapter = state.currentTTSChapterIndex >= state.allChapters.size - 1
+        Log.d(TAG, "TTS playback complete - chapter $currentChapterIndex")
 
-        // Check if at end of sentences
-        val hasNoMoreSentences = ttsSentenceList.isEmpty() ||
-                !ttsSentenceList.any { it.chapterIndex > state.currentTTSChapterIndex }
+        val isLastChapter = currentChapterIndex >= state.allChapters.size - 1
+        val shouldAutoAdvance = state.settings.ttsAutoAdvanceChapter && !isLastChapter
 
-        if (isLastChapter && hasNoMoreSentences) {
+        if (isLastChapter) {
             Log.d(TAG, "Reached end of novel, fully stopping TTS")
             stopTTSInternal()
 
@@ -971,9 +976,130 @@ class ReaderViewModel : ViewModel() {
 
             currentTTSCoordinate = StableTTSCoordinate.INVALID
             currentTTSSentenceText = ""
+        } else if (shouldAutoAdvance) {
+            // The service's playbackComplete was emitted, meaning its backgroundLoader
+            // couldn't auto-advance (failed to load or not configured properly).
+            // ViewModel takes over the auto-advance responsibility.
+            Log.d(TAG, "TTS service couldn't auto-advance - ViewModel taking over")
+
+            val nextChapterIndex = currentChapterIndex + 1
+            val nextChapter = state.allChapters.getOrNull(nextChapterIndex)
+
+            if (nextChapter != null) {
+                autoAdvanceToChapter(nextChapterIndex, nextChapter)
+            } else {
+                Log.e(TAG, "Could not find next chapter at index $nextChapterIndex")
+                stopTTSInternal()
+            }
         } else {
-            Log.d(TAG, "Chapter ended, waiting for TTS service to advance")
-            clearTTSHighlightOnly()
+            Log.d(TAG, "Chapter ended, TTS auto-advance disabled")
+            // Auto-advance is disabled, so stop TTS
+            stopTTSInternal()
+
+            _uiState.update {
+                it.copy(
+                    isTTSActive = false,
+                    ttsStatus = TTSStatus.STOPPED,
+                    currentSentenceHighlight = null,
+                    currentSegmentIndex = -1,
+                    ttsPosition = TTSPosition(),
+                    currentTTSChapterIndex = -1
+                )
+            }
+
+            currentTTSCoordinate = StableTTSCoordinate.INVALID
+            currentTTSSentenceText = ""
+        }
+    }
+
+    /**
+     * Auto-advance to a new chapter and start TTS from the beginning.
+     * Called when the TTS service's background loader fails to handle chapter advancement.
+     */
+    private fun autoAdvanceToChapter(chapterIndex: Int, chapter: Chapter) {
+        Log.d(TAG, "ViewModel auto-advancing to chapter $chapterIndex: ${chapter.name}")
+
+        lastNavigationSource = NavigationSource.TTS_AUTO
+
+        viewModelScope.launch {
+            blockTTSSync.set(true)
+
+            try {
+                // Load chapter if not already loaded
+                if (!_uiState.value.loadedChapters.containsKey(chapterIndex)) {
+                    Log.d(TAG, "Loading chapter $chapterIndex for TTS auto-advance")
+                    loadChapterContent(chapterIndex, isInitialLoad = false)
+
+                    var attempts = 0
+                    while (!_uiState.value.loadedChapters.containsKey(chapterIndex) && attempts < 50) {
+                        delay(100)
+                        attempts++
+                    }
+
+                    if (!_uiState.value.loadedChapters.containsKey(chapterIndex)) {
+                        Log.e(TAG, "Failed to load chapter $chapterIndex for TTS auto-advance")
+                        stopTTSInternal()
+                        return@launch
+                    }
+                }
+
+                // Update current chapter state
+                _uiState.update {
+                    it.copy(
+                        currentChapterIndex = chapterIndex,
+                        currentChapterUrl = chapter.url,
+                        currentChapterName = chapter.name,
+                        currentTTSChapterIndex = chapterIndex,
+                        previousChapter = it.allChapters.getOrNull(chapterIndex - 1),
+                        nextChapter = it.allChapters.getOrNull(chapterIndex + 1)
+                    )
+                }
+
+                addToHistory(chapter.url, chapter.name)
+
+                // Rebuild TTS sentence list with new chapter content
+                rebuildTTSSentenceListSafe()
+
+                // Find first sentence of new chapter
+                val firstSentenceIndex = ttsSentenceList.indexOfFirst { it.chapterIndex == chapterIndex }
+                if (firstSentenceIndex >= 0) {
+                    currentTTSCoordinate = ttsSentenceList[firstSentenceIndex].coordinate
+                    currentTTSSentenceText = ttsSentenceList[firstSentenceIndex].text
+
+                    Log.d(TAG, "Starting TTS at sentence $firstSentenceIndex of chapter $chapterIndex")
+
+                    updateHighlightFromCoordinate(currentTTSCoordinate)
+
+                    val (currentInChapter, totalInChapter) = calculateChapterTTSProgress(currentTTSCoordinate)
+
+                    _uiState.update {
+                        it.copy(
+                            isTTSActive = true,
+                            ttsStatus = TTSStatus.PLAYING,
+                            currentGlobalSentenceIndex = firstSentenceIndex,
+                            currentSentenceInChapter = currentInChapter,
+                            totalSentencesInChapter = totalInChapter,
+                            totalTTSSentences = ttsSentenceList.size
+                        )
+                    }
+
+                    // Build new content for TTS service
+                    val ttsContent = buildTTSContent(_uiState.value, ttsSentenceList)
+
+                    // Update service content and seek to first sentence of new chapter
+                    TTSServiceManager.updateContent(ttsContent, keepSegmentIndex = false)
+                    TTSServiceManager.seekToSegment(firstSentenceIndex)
+
+                    // Resume playback - the service stopped after emitting playbackComplete
+                    TTSServiceManager.resume()
+
+                } else {
+                    Log.e(TAG, "No sentences found for chapter $chapterIndex")
+                    stopTTSInternal()
+                }
+            } finally {
+                blockTTSSync.set(false)
+            }
         }
     }
 

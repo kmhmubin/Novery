@@ -391,13 +391,7 @@ fun SettingsScreen(
                                 else settings.autoDownloadLimit.toString(),
                                 onValueChange = { preferencesManager.updateAutoDownloadLimit(it.toInt()) }
                             )
-                            SettingsDivider()
-                            SettingsLabel("Download for Status", Icons.Outlined.Bookmark)
-                            Spacer(Modifier.height(8.dp))
-                            StatusChips(
-                                selected = settings.autoDownloadForStatuses,
-                                onChange = { preferencesManager.updateAutoDownloadStatuses(it) }
-                            )
+
                         }
                     }
                 }
@@ -421,8 +415,8 @@ fun SettingsScreen(
                     SettingsDivider()
                     ToggleItem(
                         icon = Icons.Outlined.AllInclusive,
-                        title = "Infinite Scroll",
-                        subtitle = "Auto-load next chapters",
+                        title = "Infinite Scroll (Experimental)",
+                        subtitle = "Auto-load next chapters (Experimental)",
                         checked = settings.infiniteScroll,
                         onCheckedChange = {
                             preferencesManager.updateAppSettings(settings.copy(infiniteScroll = it))

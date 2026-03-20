@@ -1,12 +1,17 @@
 package com.emptycastle.novery.ui.screens.details
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.emptycastle.novery.data.repository.RepositoryProvider
 import com.emptycastle.novery.domain.model.Chapter
 import com.emptycastle.novery.domain.model.Novel
 import com.emptycastle.novery.domain.model.ReadingStatus
+import com.emptycastle.novery.epub.EpubExportOptions
+import com.emptycastle.novery.epub.EpubExportResult
+import com.emptycastle.novery.epub.EpubExportState
+import com.emptycastle.novery.epub.EpubExporter
 import com.emptycastle.novery.provider.MainProvider
 import com.emptycastle.novery.service.DownloadServiceManager
 import com.emptycastle.novery.service.DownloadState
@@ -824,6 +829,51 @@ class DetailsViewModel : ViewModel() {
     fun isDownloadingThisNovel(): Boolean {
         val novelUrl = currentNovelUrl ?: return false
         return DownloadServiceManager.isDownloadingNovel(novelUrl)
+    }
+
+    // ================================================================
+    // EPUB EXPORT
+    // ================================================================
+
+    private var epubExporter: EpubExporter? = null
+
+    val epubExportState: StateFlow<EpubExportState>
+        get() = epubExporter?.exportState ?: MutableStateFlow(EpubExportState()).asStateFlow()
+
+    fun initializeExporter(context: Context) {
+        if (epubExporter == null) {
+            epubExporter = EpubExporter(context, offlineRepository)
+        }
+    }
+
+    suspend fun exportNovelToEpub(
+        outputUri: Uri,
+        options: EpubExportOptions = EpubExportOptions()
+    ): EpubExportResult {
+        val novelUrl = currentNovelUrl ?: return EpubExportResult(
+            success = false,
+            error = "Novel URL not available"
+        )
+        return epubExporter?.exportToEpub(novelUrl, outputUri, options)
+            ?: EpubExportResult(success = false, error = "Exporter not initialized")
+    }
+
+    fun generateEpubFileName(): String {
+        val novelName = _uiState.value.novelDetails?.name ?: "novel"
+        return epubExporter?.generateFileName(novelName)
+            ?: "${novelName.take(50)}.epub"
+    }
+
+    fun resetExportState() {
+        epubExporter?.resetState()
+    }
+
+    fun getDownloadedChapterCount(): Int {
+        return _uiState.value.downloadedChapters.size
+    }
+
+    fun hasDownloadedChapters(): Boolean {
+        return _uiState.value.downloadedChapters.isNotEmpty()
     }
 
     // ================================================================
