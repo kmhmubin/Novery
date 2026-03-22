@@ -6,12 +6,14 @@ import com.emptycastle.novery.data.local.PreferencesManager
 import com.emptycastle.novery.data.remote.CloudflareManager
 import com.emptycastle.novery.data.repository.RepositoryProvider
 import com.emptycastle.novery.provider.LibReadProvider
+import com.emptycastle.novery.provider.LnoriProvider
 import com.emptycastle.novery.provider.MainProvider
 import com.emptycastle.novery.provider.NovelBinProvider
 import com.emptycastle.novery.provider.NovelFireProvider
 import com.emptycastle.novery.provider.NovelsOnlineProvider
 import com.emptycastle.novery.provider.RoyalRoadProvider
 import com.emptycastle.novery.provider.WebnovelProvider
+import com.emptycastle.novery.provider.WtrLabProvider
 import com.emptycastle.novery.service.NotificationHelper
 import com.emptycastle.novery.tts.TTSManager
 import com.emptycastle.novery.tts.VoiceManager
@@ -64,10 +66,12 @@ class NoveryApp : Application() {
     private fun registerProviders() {
         // Add providers here - order determines display order
         MainProvider.register(NovelFireProvider())
-        MainProvider.register(WebnovelProvider())
+        MainProvider.register(WtrLabProvider())
         MainProvider.register(NovelBinProvider())
         MainProvider.register(LibReadProvider())
         MainProvider.register(RoyalRoadProvider())
         MainProvider.register(NovelsOnlineProvider())
+        MainProvider.register(LnoriProvider())
+        MainProvider.register(WebnovelProvider())
     }
 }

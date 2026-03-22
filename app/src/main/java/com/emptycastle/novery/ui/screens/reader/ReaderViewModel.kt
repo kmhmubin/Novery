@@ -35,6 +35,7 @@ import com.emptycastle.novery.ui.screens.reader.model.ReaderUiState
 import com.emptycastle.novery.ui.screens.reader.model.SentenceBoundsInSegment
 import com.emptycastle.novery.ui.screens.reader.model.SentenceHighlight
 import com.emptycastle.novery.ui.screens.reader.model.StableScrollPosition
+import com.emptycastle.novery.ui.screens.reader.model.StableTargetScrollPosition
 import com.emptycastle.novery.ui.screens.reader.model.TTSPosition
 import com.emptycastle.novery.ui.screens.reader.model.TTSScrollEdge
 import com.emptycastle.novery.ui.screens.reader.model.TTSSettingsState
@@ -192,6 +193,9 @@ class ReaderViewModel : ViewModel() {
     private var preloadJob: Job? = null
     private var savePositionJob: Job? = null
     private val positionSaveDebounceMs = 500L
+
+    private var chapterUpdateJob: Job? = null
+    private val chapterUpdateDebounceMs = 150L
 
     // Navigation tracking
     private var lastNavigationSource: NavigationSource = NavigationSource.CONTINUE
@@ -1458,7 +1462,6 @@ class ReaderViewModel : ViewModel() {
                     currentChapterUrl = chapterUrl,
                     loadedChapters = emptyMap(),
                     displayItems = emptyList(),
-                    targetScrollPosition = null,
                     hasRestoredScroll = !shouldRestorePosition,
                     pendingScrollReset = true,
                     currentScrollIndex = 0,
@@ -1545,24 +1548,18 @@ class ReaderViewModel : ViewModel() {
             val chapter = state.allChapters.getOrNull(chapterIndex)
 
             if (chapter != null) {
-                val targetPosition = if (shouldRestorePosition) {
-                    val savedPosition = loadSavedStablePosition(chapter.url, chapterIndex)
-                    desiredScrollPosition = savedPosition ?: StableScrollPosition.chapterStart(chapterIndex)
-                    resolveStablePosition(desiredScrollPosition!!)
+                val stablePosition = if (shouldRestorePosition) {
+                    loadSavedStablePosition(chapter.url, chapterIndex)
+                        ?: StableScrollPosition.chapterStart(chapterIndex)
                 } else {
-                    desiredScrollPosition = StableScrollPosition.chapterStart(chapterIndex)
-                    PositionResolution.Found(0, 0, 1.0f)
+                    StableScrollPosition.chapterStart(chapterIndex)
                 }
+
+                desiredScrollPosition = stablePosition
 
                 _uiState.update {
                     it.copy(
-                        targetScrollPosition = when (targetPosition) {
-                            is PositionResolution.Found -> TargetScrollPosition(
-                                displayIndex = targetPosition.displayIndex,
-                                offsetPixels = targetPosition.pixelOffset
-                            )
-                            else -> TargetScrollPosition(0, 0)
-                        }
+                        stableTargetPosition = StableTargetScrollPosition(stablePosition)
                     )
                 }
             }
@@ -1609,8 +1606,6 @@ class ReaderViewModel : ViewModel() {
         if (!shouldLoad) return
 
         val chapter = allChapters[chapterIndex]
-        val isBeforeCurrentChapter = chapterIndex < state.currentChapterIndex
-        val itemCountBefore = state.displayItems.size
 
         // Save TTS state before rebuild
         val ttsWasActive = _uiState.value.isTTSActive && _uiState.value.ttsStatus != TTSStatus.STOPPED
@@ -1618,10 +1613,13 @@ class ReaderViewModel : ViewModel() {
         val savedTTSText = currentTTSSentenceText
 
         val loadingChapter = chapterLoader.createLoadingChapter(chapter, chapterIndex)
-        _uiState.update {
-            it.copy(loadedChapters = it.loadedChapters + (chapterIndex to loadingChapter))
+
+        stateMutex.withLock {
+            _uiState.update {
+                it.copy(loadedChapters = it.loadedChapters + (chapterIndex to loadingChapter))
+            }
+            rebuildDisplayItemsInternal()
         }
-        rebuildDisplayItemsWithTTSPreserve(ttsWasActive, savedTTSCoordinate, savedTTSText)
 
         try {
             val result = chapterLoader.loadChapter(chapter, chapterIndex)
@@ -1633,40 +1631,45 @@ class ReaderViewModel : ViewModel() {
                             result.loadedChapter.segments,
                             chapterIndex
                         )
+
+                        _uiState.update {
+                            it.copy(
+                                loadedChapters = it.loadedChapters + (chapterIndex to result.loadedChapter),
+                                isLoading = if (chapterIndex == it.initialChapterIndex) false else it.isLoading,
+                                isContentReady = if (chapterIndex == it.initialChapterIndex) true else it.isContentReady,
+                                currentChapterName = if (chapterIndex == it.currentChapterIndex) chapter.name else it.currentChapterName,
+                                isOfflineMode = result.loadedChapter.isFromCache && it.isOfflineMode
+                            )
+                        }
+
+                        rebuildDisplayItemsInternal()
                     }
 
-                    _uiState.update {
-                        it.copy(
-                            loadedChapters = it.loadedChapters + (chapterIndex to result.loadedChapter),
-                            isLoading = if (chapterIndex == it.initialChapterIndex) false else it.isLoading,
-                            isContentReady = if (chapterIndex == it.initialChapterIndex) true else it.isContentReady,
-                            currentChapterName = if (chapterIndex == it.currentChapterIndex) chapter.name else it.currentChapterName,
-                            isOfflineMode = result.loadedChapter.isFromCache && it.isOfflineMode
-                        )
-                    }
-
-                    rebuildDisplayItemsWithTTSPreserve(ttsWasActive, savedTTSCoordinate, savedTTSText)
-
-                    if (isBeforeCurrentChapter && !isInitialLoad && !isTransitioning.get()) {
-                        val itemCountAfter = _uiState.value.displayItems.size
-                        val itemsAdded = itemCountAfter - itemCountBefore
-                        if (itemsAdded > 0) {
-                            adjustScrollPositionBy(itemsAdded)
+                    // Restore TTS if active
+                    if (ttsWasActive && !blockTTSUpdates.get() && !blockTTSSync.get()) {
+                        viewModelScope.launch {
+                            ttsRebuildMutex.withLock {
+                                currentTTSCoordinate = savedTTSCoordinate
+                                currentTTSSentenceText = savedTTSText
+                                rebuildTTSSentenceListInternal()
+                            }
                         }
                     }
                 }
 
                 is ChapterLoadResult.Error -> {
                     val errorChapter = chapterLoader.createErrorChapter(chapter, chapterIndex, result.message)
-                    _uiState.update {
-                        it.copy(
-                            loadedChapters = it.loadedChapters + (chapterIndex to errorChapter),
-                            isLoading = if (chapterIndex == it.initialChapterIndex) false else it.isLoading,
-                            isContentReady = if (chapterIndex == it.initialChapterIndex) true else it.isContentReady,
-                            error = if (chapterIndex == it.initialChapterIndex) result.message else it.error
-                        )
+                    stateMutex.withLock {
+                        _uiState.update {
+                            it.copy(
+                                loadedChapters = it.loadedChapters + (chapterIndex to errorChapter),
+                                isLoading = if (chapterIndex == it.initialChapterIndex) false else it.isLoading,
+                                isContentReady = if (chapterIndex == it.initialChapterIndex) true else it.isContentReady,
+                                error = if (chapterIndex == it.initialChapterIndex) result.message else it.error
+                            )
+                        }
+                        rebuildDisplayItemsInternal()
                     }
-                    rebuildDisplayItemsWithTTSPreserve(ttsWasActive, savedTTSCoordinate, savedTTSText)
                 }
             }
         } finally {
@@ -2003,7 +2006,7 @@ class ReaderViewModel : ViewModel() {
         }
     }
 
-    fun updateCurrentScrollPosition(firstVisibleItemIndex: Int, firstVisibleItemOffset: Int) {
+    fun updateCurrentScrollPosition(firstVisibleItemIndex: Int, firstVisibleItemScrollOffset: Int) {
         if (isTransitioning.get()) {
             return
         }
@@ -2011,18 +2014,28 @@ class ReaderViewModel : ViewModel() {
         _uiState.update {
             it.copy(
                 currentScrollIndex = firstVisibleItemIndex,
-                currentScrollOffset = firstVisibleItemOffset
+                currentScrollOffset = firstVisibleItemScrollOffset
             )
         }
 
-        val stablePosition = displayIndexToStablePosition(firstVisibleItemIndex, firstVisibleItemOffset)
+        val stablePosition = displayIndexToStablePosition(firstVisibleItemIndex, firstVisibleItemScrollOffset)
         if (stablePosition != null) {
             desiredScrollPosition = stablePosition
 
-            if (stablePosition.chapterIndex != _uiState.value.currentChapterIndex) {
-                val chapter = _uiState.value.allChapters.getOrNull(stablePosition.chapterIndex)
-                if (chapter != null) {
-                    updateCurrentChapter(stablePosition.chapterIndex, chapter.url, chapter.name)
+            // Debounced chapter update to prevent feedback loops
+            val detectedChapterIndex = stablePosition.chapterIndex
+            if (detectedChapterIndex != _uiState.value.currentChapterIndex) {
+                chapterUpdateJob?.cancel()
+                chapterUpdateJob = viewModelScope.launch {
+                    delay(chapterUpdateDebounceMs)
+                    // Re-check after debounce
+                    val currentPosition = desiredScrollPosition
+                    if (currentPosition?.chapterIndex == detectedChapterIndex) {
+                        val chapter = _uiState.value.allChapters.getOrNull(detectedChapterIndex)
+                        if (chapter != null) {
+                            updateCurrentChapterInternal(detectedChapterIndex, chapter.url, chapter.name)
+                        }
+                    }
                 }
             }
 
@@ -2031,6 +2044,39 @@ class ReaderViewModel : ViewModel() {
                 debouncedSavePosition(stablePosition)
             }
         }
+    }
+
+    // Renamed internal version that doesn't do debounce checks
+    private fun updateCurrentChapterInternal(chapterIndex: Int, chapterUrl: String, chapterName: String) {
+        if (isTransitioning.get() || blockInfiniteScroll.get()) {
+            return
+        }
+
+        val state = _uiState.value
+        if (state.currentChapterIndex != chapterIndex) {
+            val loadedChapter = state.loadedChapters[chapterIndex]
+            val wordCount = loadedChapter?.segments?.sumOf { segment ->
+                segment.text.split("\\s+".toRegex()).size
+            } ?: 0
+
+            _uiState.update {
+                it.copy(
+                    currentChapterIndex = chapterIndex,
+                    currentChapterUrl = chapterUrl,
+                    currentChapterName = chapterName,
+                    previousChapter = it.allChapters.getOrNull(chapterIndex - 1),
+                    nextChapter = it.allChapters.getOrNull(chapterIndex + 1),
+                    currentChapterWordCount = wordCount
+                )
+            }
+
+            addToHistory(chapterUrl, chapterName)
+        }
+    }
+
+    // Keep the public version for external calls (like from snapshotFlow)
+    fun updateCurrentChapter(chapterIndex: Int, chapterUrl: String, chapterName: String) {
+        updateCurrentChapterInternal(chapterIndex, chapterUrl, chapterName)
     }
 
     private fun debouncedSavePosition(position: StableScrollPosition) {
@@ -2078,7 +2124,7 @@ class ReaderViewModel : ViewModel() {
             it.copy(
                 pendingScrollReset = false,
                 hasRestoredScroll = true,
-                targetScrollPosition = null
+                stableTargetPosition = null
             )
         }
     }
@@ -2086,25 +2132,13 @@ class ReaderViewModel : ViewModel() {
     fun markScrollRestored() {
         _uiState.update {
             it.copy(
-                targetScrollPosition = null,
+                stableTargetPosition = null,
                 hasRestoredScroll = true,
                 pendingScrollReset = false
             )
         }
     }
 
-    private fun adjustScrollPositionBy(itemsAdded: Int) {
-        _uiState.update {
-            val newIndex = it.currentScrollIndex + itemsAdded
-            it.copy(
-                currentScrollIndex = newIndex,
-                targetScrollPosition = TargetScrollPosition(
-                    displayIndex = newIndex,
-                    offsetPixels = it.currentScrollOffset
-                )
-            )
-        }
-    }
 
     // =========================================================================
     // INFINITE SCROLL
@@ -2158,12 +2192,13 @@ class ReaderViewModel : ViewModel() {
         val center = state.currentChapterIndex
         val keepRange = (center - preloadBefore - 1)..(center + preloadAfter + 1)
 
-        // CRITICAL: Also protect TTS chapter
+        // Protect current chapter and TTS chapter
         val protected = setOf(
             state.currentChapterIndex,
             state.currentTTSChapterIndex,
-            currentTTSCoordinate.chapterIndex,  // Extra protection
-            requestedChapterIndex
+            currentTTSCoordinate.chapterIndex,
+            requestedChapterIndex,
+            desiredScrollPosition?.chapterIndex ?: -1  // Also protect scroll target
         ).filter { it >= 0 }
 
         val toUnload = stateMutex.withLock {
@@ -2177,44 +2212,25 @@ class ReaderViewModel : ViewModel() {
                 toUnload.forEach { idx ->
                     characterMaps.remove(idx)
                 }
+
+                _uiState.update {
+                    val updated = it.loadedChapters.toMutableMap()
+                    toUnload.forEach { idx -> updated.remove(idx) }
+                    it.copy(loadedChapters = updated)
+                }
+
+                rebuildDisplayItemsInternal()
             }
 
-            _uiState.update {
-                val updated = it.loadedChapters.toMutableMap()
-                toUnload.forEach { idx -> updated.remove(idx) }
-                it.copy(loadedChapters = updated)
-            }
-
-            // Rebuild with TTS preservation
+            // Rebuild TTS if active
             val ttsActive = _uiState.value.isTTSActive
-            rebuildDisplayItemsWithTTSPreserve(ttsActive, currentTTSCoordinate, currentTTSSentenceText)
-        }
-    }
-
-    fun updateCurrentChapter(chapterIndex: Int, chapterUrl: String, chapterName: String) {
-        if (isTransitioning.get() || blockInfiniteScroll.get()) {
-            return
-        }
-
-        val state = _uiState.value
-        if (state.currentChapterIndex != chapterIndex) {
-            val loadedChapter = state.loadedChapters[chapterIndex]
-            val wordCount = loadedChapter?.segments?.sumOf { segment ->
-                segment.text.split("\\s+".toRegex()).size
-            } ?: 0
-
-            _uiState.update {
-                it.copy(
-                    currentChapterIndex = chapterIndex,
-                    currentChapterUrl = chapterUrl,
-                    currentChapterName = chapterName,
-                    previousChapter = it.allChapters.getOrNull(chapterIndex - 1),
-                    nextChapter = it.allChapters.getOrNull(chapterIndex + 1),
-                    currentChapterWordCount = wordCount
-                )
+            if (ttsActive && !blockTTSUpdates.get()) {
+                viewModelScope.launch {
+                    ttsRebuildMutex.withLock {
+                        rebuildTTSSentenceListInternal()
+                    }
+                }
             }
-
-            addToHistory(chapterUrl, chapterName)
         }
     }
 

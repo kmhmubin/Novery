@@ -187,8 +187,8 @@ data class ReaderUiState(
     // Pending scroll reset flag
     val pendingScrollReset: Boolean = false,
 
-    // Scroll State
-    val targetScrollPosition: TargetScrollPosition? = null,
+    // Scroll State - NOW USES STABLE POSITION
+    val stableTargetPosition: StableTargetScrollPosition? = null,
     val hasRestoredScroll: Boolean = false,
     val currentScrollIndex: Int = 0,
     val currentScrollOffset: Int = 0,
@@ -239,7 +239,19 @@ data class ReaderUiState(
     val shouldShowLoadingOverlay: Boolean
         get() = isLoading || !isContentReady || pendingScrollReset
 
-    val savedScrollPosition: TargetScrollPosition? get() = targetScrollPosition
+    // Legacy accessor for compatibility - resolves at access time
+    val targetScrollPosition: TargetScrollPosition?
+        get() = stableTargetPosition?.let { stable ->
+            val resolution = stable.resolveDisplayIndex(displayItems)
+            when (resolution) {
+                is PositionResolution.Found -> TargetScrollPosition(
+                    displayIndex = resolution.displayIndex,
+                    offsetPixels = resolution.pixelOffset,
+                    id = stable.id
+                )
+                else -> null
+            }
+        }
 
     fun getAllSegments(): List<ReaderDisplayItem.Segment> {
         return displayItems.filterIsInstance<ReaderDisplayItem.Segment>()

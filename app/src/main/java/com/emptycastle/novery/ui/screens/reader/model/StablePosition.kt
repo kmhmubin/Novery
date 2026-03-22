@@ -116,3 +116,67 @@ sealed class PositionResolution {
     data class ChapterNotLoaded(val chapterIndex: Int) : PositionResolution()
     data object NotFound : PositionResolution()
 }
+
+/**
+ * Target scroll position that stores STABLE coordinates.
+ * Resolution to display index happens at consumption time only.
+ */
+data class StableTargetScrollPosition(
+    val stablePosition: StableScrollPosition,
+    /** Unique ID to detect when this target changes */
+    val id: Long = System.currentTimeMillis()
+) {
+    /**
+     * Resolve to display index at consumption time.
+     * This is called in the UI layer immediately before scrolling.
+     */
+    fun resolveDisplayIndex(displayItems: List<ReaderDisplayItem>): PositionResolution {
+        if (displayItems.isEmpty()) return PositionResolution.NotFound
+
+        // Check if the target chapter is loaded
+        val hasChapter = displayItems.any { item ->
+            when (item) {
+                is ReaderDisplayItem.ChapterHeader -> item.chapterIndex == stablePosition.chapterIndex
+                is ReaderDisplayItem.Segment -> item.chapterIndex == stablePosition.chapterIndex
+                else -> false
+            }
+        }
+
+        if (!hasChapter) {
+            return PositionResolution.ChapterNotLoaded(stablePosition.chapterIndex)
+        }
+
+        // Find the target segment
+        val targetDisplayIndex = displayItems.indexOfFirst { item ->
+            when (item) {
+                is ReaderDisplayItem.Segment ->
+                    item.chapterIndex == stablePosition.chapterIndex &&
+                            item.segmentIndexInChapter == stablePosition.segmentIndex
+                is ReaderDisplayItem.ChapterHeader ->
+                    item.chapterIndex == stablePosition.chapterIndex &&
+                            stablePosition.segmentIndex == 0 &&
+                            stablePosition.pixelOffset == 0
+                else -> false
+            }
+        }
+
+        return if (targetDisplayIndex >= 0) {
+            PositionResolution.Found(
+                displayIndex = targetDisplayIndex,
+                pixelOffset = stablePosition.pixelOffset,
+                confidence = 1.0f
+            )
+        } else {
+            // Fallback: find chapter header
+            val headerIndex = displayItems.indexOfFirst { item ->
+                item is ReaderDisplayItem.ChapterHeader &&
+                        item.chapterIndex == stablePosition.chapterIndex
+            }
+            if (headerIndex >= 0) {
+                PositionResolution.Found(headerIndex, 0, 0.5f)
+            } else {
+                PositionResolution.NotFound
+            }
+        }
+    }
+}

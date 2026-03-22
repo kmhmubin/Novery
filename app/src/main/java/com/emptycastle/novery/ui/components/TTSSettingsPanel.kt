@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SwapVert
@@ -115,6 +116,8 @@ private object TTSTheme {
     val amberMuted = Color(0xFFF59E0B).copy(alpha = 0.15f)
     val blue = Color(0xFF3B82F6)
     val blueMuted = Color(0xFF3B82F6).copy(alpha = 0.15f)
+    val cyan = Color(0xFF06B6D4)
+    val cyanMuted = Color(0xFF06B6D4).copy(alpha = 0.15f)
 
     val cornerRadiusMedium = 20.dp
     val cornerRadiusSmall = 14.dp
@@ -140,14 +143,16 @@ fun TTSSettingsPanel(
     selectedVoiceId: String?,
     autoScroll: Boolean,
     highlightSentence: Boolean,
-    lockScrollDuringTTS: Boolean,  // NEW PARAMETER
+    lockScrollDuringTTS: Boolean,
+    autoAdvanceChapter: Boolean,  // NEW PARAMETER
     useSystemVoice: Boolean,
     onSpeedChange: (Float) -> Unit,
     onPitchChange: (Float) -> Unit,
     onVoiceSelected: (VoiceInfo) -> Unit,
     onAutoScrollChange: (Boolean) -> Unit,
     onHighlightChange: (Boolean) -> Unit,
-    onLockScrollChange: (Boolean) -> Unit,  // NEW CALLBACK
+    onLockScrollChange: (Boolean) -> Unit,
+    onAutoAdvanceChapterChange: (Boolean) -> Unit,  // NEW CALLBACK
     onUseSystemVoiceChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
@@ -175,7 +180,7 @@ fun TTSSettingsPanel(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(max = 520.dp),  // Slightly increased for new setting
+            .heightIn(max = 560.dp),  // Increased for new setting
         shape = RoundedCornerShape(TTSTheme.cornerRadiusMedium),
         color = Color.Transparent,
         tonalElevation = 8.dp,
@@ -276,7 +281,8 @@ fun TTSSettingsPanel(
                             TTSTab.OPTIONS -> OptionsTabContent(
                                 autoScroll = autoScroll,
                                 highlightSentence = highlightSentence,
-                                lockScrollDuringTTS = lockScrollDuringTTS,  // NEW
+                                lockScrollDuringTTS = lockScrollDuringTTS,
+                                autoAdvanceChapter = autoAdvanceChapter,  // NEW
                                 sleepTimerRemaining = sleepTimerRemaining,
                                 useSystemVoice = useSystemVoice,
                                 onAutoScrollChange = {
@@ -287,9 +293,13 @@ fun TTSSettingsPanel(
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onHighlightChange(it)
                                 },
-                                onLockScrollChange = {  // NEW
+                                onLockScrollChange = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onLockScrollChange(it)
+                                },
+                                onAutoAdvanceChapterChange = {  // NEW
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onAutoAdvanceChapterChange(it)
                                 },
                                 onSetSleepTimer = { minutes ->
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -309,7 +319,7 @@ fun TTSSettingsPanel(
 }
 
 // =============================================================================
-// HEADER
+// HEADER (unchanged)
 // =============================================================================
 
 @Composable
@@ -357,7 +367,6 @@ private fun TTSSettingsHeader(
                         style = MaterialTheme.typography.labelSmall,
                         color = TTSTheme.textMuted
                     )
-                    // Sleep timer indicator
                     if (sleepTimerRemaining != null && sleepTimerRemaining > 0) {
                         Surface(
                             shape = RoundedCornerShape(4.dp),
@@ -407,7 +416,7 @@ private fun TTSSettingsHeader(
 }
 
 // =============================================================================
-// TAB BAR
+// TAB BAR (unchanged)
 // =============================================================================
 
 @Composable
@@ -487,7 +496,6 @@ private fun VoiceTabContent(
     onStopPreview: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // System Voice Toggle
         TTSSectionCard(title = "Voice Source") {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 TTSToggleSetting(
@@ -499,7 +507,6 @@ private fun VoiceTabContent(
                     onCheckedChange = onUseSystemVoiceChange
                 )
 
-                // System TTS Settings button when using system voice
                 AnimatedVisibility(
                     visible = useSystemVoice,
                     enter = expandVertically() + fadeIn(),
@@ -510,7 +517,6 @@ private fun VoiceTabContent(
             }
         }
 
-        // Custom Voice Selection
         AnimatedVisibility(
             visible = !useSystemVoice,
             enter = expandVertically() + fadeIn(),
@@ -518,7 +524,6 @@ private fun VoiceTabContent(
         ) {
             TTSSectionCard(title = "Select Voice") {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    // Current selection display
                     if (selectedVoice != null) {
                         CurrentVoiceCard(
                             voice = selectedVoice,
@@ -533,7 +538,6 @@ private fun VoiceTabContent(
                         )
                     }
 
-                    // Voice list toggle button
                     Surface(
                         onClick = onToggleVoiceSelector,
                         shape = RoundedCornerShape(10.dp),
@@ -562,7 +566,6 @@ private fun VoiceTabContent(
                         }
                     }
 
-                    // Voice selector - using existing VoiceSelector component
                     AnimatedVisibility(
                         visible = showVoiceSelector,
                         enter = expandVertically() + fadeIn(),
@@ -714,10 +717,8 @@ private fun PlaybackTabContent(
     onPitchChange: (Float) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // Speed Control
         TTSSectionCard(title = "Speech Rate", trailing = "${String.format("%.1f", speed)}x") {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Quick presets
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -738,7 +739,6 @@ private fun PlaybackTabContent(
                     }
                 }
 
-                // Slider
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -765,10 +765,8 @@ private fun PlaybackTabContent(
             }
         }
 
-        // Pitch Control
         TTSSectionCard(title = "Pitch", trailing = "${String.format("%.1f", pitch)}x") {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Quick presets
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -790,7 +788,6 @@ private fun PlaybackTabContent(
                     }
                 }
 
-                // Slider
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -817,7 +814,6 @@ private fun PlaybackTabContent(
             }
         }
 
-        // Info card
         Surface(
             shape = RoundedCornerShape(12.dp),
             color = TTSTheme.surfaceVariant.copy(alpha = 0.5f)
@@ -844,19 +840,21 @@ private fun PlaybackTabContent(
 }
 
 // =============================================================================
-// TAB CONTENT - OPTIONS (UPDATED with Lock Scroll)
+// TAB CONTENT - OPTIONS (UPDATED with Auto-Advance Chapter)
 // =============================================================================
 
 @Composable
 private fun OptionsTabContent(
     autoScroll: Boolean,
     highlightSentence: Boolean,
-    lockScrollDuringTTS: Boolean,  // NEW
+    lockScrollDuringTTS: Boolean,
+    autoAdvanceChapter: Boolean,  // NEW
     sleepTimerRemaining: Int?,
     useSystemVoice: Boolean,
     onAutoScrollChange: (Boolean) -> Unit,
     onHighlightChange: (Boolean) -> Unit,
-    onLockScrollChange: (Boolean) -> Unit,  // NEW
+    onLockScrollChange: (Boolean) -> Unit,
+    onAutoAdvanceChapterChange: (Boolean) -> Unit,  // NEW
     onSetSleepTimer: (Int) -> Unit,
     onCancelSleepTimer: () -> Unit
 ) {
@@ -882,7 +880,6 @@ private fun OptionsTabContent(
                     onCheckedChange = onHighlightChange
                 )
 
-                // NEW: Lock Scroll Setting
                 TTSToggleSetting(
                     icon = Icons.Default.Lock,
                     title = "Lock Scroll During Playback",
@@ -892,7 +889,7 @@ private fun OptionsTabContent(
                     onCheckedChange = onLockScrollChange
                 )
 
-                // Info about lock scroll when enabled
+                // Lock scroll info
                 AnimatedVisibility(
                     visible = lockScrollDuringTTS,
                     enter = expandVertically() + fadeIn(),
@@ -926,10 +923,55 @@ private fun OptionsTabContent(
             }
         }
 
+        // Chapter Behavior - NEW SECTION
+        TTSSectionCard(title = "Chapter Behavior") {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                TTSToggleSetting(
+                    icon = Icons.Default.SkipNext,
+                    title = "Auto-Advance Chapter",
+                    subtitle = "Automatically start next chapter when finished",
+                    checked = autoAdvanceChapter,
+                    accentColor = TTSTheme.cyan,
+                    onCheckedChange = onAutoAdvanceChapterChange
+                )
+
+                // Info about auto-advance
+                AnimatedVisibility(
+                    visible = autoAdvanceChapter,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = TTSTheme.cyanMuted
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SkipNext,
+                                contentDescription = null,
+                                tint = TTSTheme.cyan,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "When TTS finishes a chapter, the next chapter will automatically load and start playing.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TTSTheme.cyan
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Sleep Timer
         TTSSectionCard(title = "Sleep Timer") {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Active timer display
                 AnimatedVisibility(
                     visible = sleepTimerRemaining != null && sleepTimerRemaining > 0,
                     enter = expandVertically() + fadeIn(),
@@ -999,7 +1041,6 @@ private fun OptionsTabContent(
                     }
                 }
 
-                // Timer options
                 Text(
                     text = if (sleepTimerRemaining != null && sleepTimerRemaining > 0) "Change timer" else "Stop playback after",
                     style = MaterialTheme.typography.labelSmall,
@@ -1070,7 +1111,7 @@ private fun SleepTimerChip(
 }
 
 // =============================================================================
-// REUSABLE COMPONENTS
+// REUSABLE COMPONENTS (unchanged)
 // =============================================================================
 
 @Composable

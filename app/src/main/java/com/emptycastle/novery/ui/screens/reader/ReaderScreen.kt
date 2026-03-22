@@ -1,5 +1,6 @@
 package com.emptycastle.novery.ui.screens.reader
 
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -65,6 +66,7 @@ import com.emptycastle.novery.ui.screens.reader.components.ReaderContainer
 import com.emptycastle.novery.ui.screens.reader.components.ReaderErrorState
 import com.emptycastle.novery.ui.screens.reader.components.ReaderTopBar
 import com.emptycastle.novery.ui.screens.reader.components.ScrollUtils
+import com.emptycastle.novery.ui.screens.reader.model.PositionResolution
 import com.emptycastle.novery.ui.screens.reader.model.ReaderDisplayItem
 import com.emptycastle.novery.ui.screens.reader.model.ReaderUiState
 import com.emptycastle.novery.ui.screens.reader.model.SentenceBoundsInSegment
@@ -211,28 +213,48 @@ fun ReaderScreen(
     }
 
     // Restore scroll position when content is loaded and ready
-    LaunchedEffect(uiState.targetScrollPosition, uiState.isContentReady) {
-        val targetPosition = uiState.targetScrollPosition ?: return@LaunchedEffect
+    LaunchedEffect(uiState.stableTargetPosition, uiState.isContentReady, uiState.displayItems.size) {
+        val stableTarget = uiState.stableTargetPosition ?: return@LaunchedEffect
         if (!uiState.isContentReady) return@LaunchedEffect
+        if (uiState.displayItems.isEmpty()) return@LaunchedEffect
 
-        delay(150)
+        delay(100) // Small delay for layout to stabilize
 
-        try {
-            val targetIndex = targetPosition.displayIndex.coerceIn(
-                0,
-                maxOf(0, uiState.displayItems.size - 1)
-            )
-            listState.scrollToItem(
-                index = targetIndex,
-                scrollOffset = targetPosition.offsetPixels
-            )
-        } catch (e: Exception) {
-            try {
-                listState.scrollToItem(0)
-            } catch (_: Exception) { }
+        // Resolve stable position to display index NOW
+        val resolution = stableTarget.resolveDisplayIndex(uiState.displayItems)
+
+        when (resolution) {
+            is PositionResolution.Found -> {
+                try {
+                    val targetIndex = resolution.displayIndex.coerceIn(
+                        0,
+                        maxOf(0, uiState.displayItems.size - 1)
+                    )
+                    listState.scrollToItem(
+                        index = targetIndex,
+                        scrollOffset = resolution.pixelOffset
+                    )
+                    Log.d("ReaderScreen", "Scroll restored to index $targetIndex with confidence ${resolution.confidence}")
+                } catch (e: Exception) {
+                    Log.e("ReaderScreen", "Failed to restore scroll: ${e.message}")
+                    try {
+                        listState.scrollToItem(0)
+                    } catch (_: Exception) { }
+                }
+                viewModel.markScrollRestored()
+            }
+            is PositionResolution.ChapterNotLoaded -> {
+                Log.d("ReaderScreen", "Chapter ${resolution.chapterIndex} not yet loaded, waiting...")
+                // Don't mark as restored - wait for chapter to load
+            }
+            PositionResolution.NotFound -> {
+                Log.w("ReaderScreen", "Could not resolve scroll position, scrolling to start")
+                try {
+                    listState.scrollToItem(0)
+                } catch (_: Exception) { }
+                viewModel.markScrollRestored()
+            }
         }
-
-        viewModel.markScrollRestored()
     }
 
     // Track scroll position changes - only when content is ready
@@ -512,6 +534,9 @@ fun ReaderScreen(
         onTTSHighlightChange = viewModel::updateTTSHighlightSentence,
         onTTSLockScrollChange = viewModel::setTTSScrollLock,
         onTTSUseSystemVoiceChange = viewModel::updateTTSUseSystemVoice,
+        onTTSAutoAdvanceChapterChange = { enabled ->
+            viewModel.updateReaderSettings(uiState.settings.copy(ttsAutoAdvanceChapter = enabled))
+        },
         onPrevious = viewModel::navigateToPrevious,
         onNext = viewModel::navigateToNext,
         onConfirmScrollReset = viewModel::confirmScrollReset
@@ -687,6 +712,7 @@ private fun ReaderScreenContent(
     onTTSHighlightChange: (Boolean) -> Unit,
     onTTSLockScrollChange: (Boolean) -> Unit,
     onTTSUseSystemVoiceChange: (Boolean) -> Unit,
+    onTTSAutoAdvanceChapterChange: (Boolean) -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onConfirmScrollReset: () -> Unit
@@ -703,20 +729,28 @@ private fun ReaderScreenContent(
         uiState.isContentReady,
         uiState.pendingScrollReset,
         uiState.displayItems.size,
-        uiState.targetScrollPosition
+        uiState.stableTargetPosition  // Changed from targetScrollPosition
     ) {
         if (uiState.isContentReady &&
             uiState.pendingScrollReset &&
             uiState.displayItems.isNotEmpty() &&
             !hasCompletedScrollReset
         ) {
-            val targetPosition = uiState.targetScrollPosition
-            val targetIndex = (targetPosition?.displayIndex ?: 0)
-                .coerceIn(0, uiState.displayItems.size - 1)
-            val targetOffset = targetPosition?.offsetPixels ?: 0
+            val stableTarget = uiState.stableTargetPosition
+
+            val (targetIndex, targetOffset) = if (stableTarget != null) {
+                when (val resolution = stableTarget.resolveDisplayIndex(uiState.displayItems)) {
+                    is PositionResolution.Found -> Pair(
+                        resolution.displayIndex.coerceIn(0, uiState.displayItems.size - 1),
+                        resolution.pixelOffset
+                    )
+                    else -> Pair(0, 0)
+                }
+            } else {
+                Pair(0, 0)
+            }
 
             try {
-                // Scroll immediately without animation
                 listState.scrollToItem(index = targetIndex, scrollOffset = targetOffset)
             } catch (e: Exception) {
                 try {
@@ -838,6 +872,7 @@ private fun ReaderScreenContent(
                             autoScroll = uiState.ttsSettings.autoScroll,
                             lockScrollDuringTTS = ttsScrollLocked,
                             highlightSentence = uiState.ttsSettings.highlightSentence,
+                            autoAdvanceChapter = uiState.settings.ttsAutoAdvanceChapter,  // NEW
                             useSystemVoice = uiState.ttsSettings.useSystemVoice,
                             onSpeedChange = onTTSSpeedChange,
                             onPitchChange = onTTSPitchChange,
@@ -845,6 +880,7 @@ private fun ReaderScreenContent(
                             onAutoScrollChange = onTTSAutoScrollChange,
                             onHighlightChange = onTTSHighlightChange,
                             onLockScrollChange = onTTSLockScrollChange,
+                            onAutoAdvanceChapterChange = onTTSAutoAdvanceChapterChange,  // NEW
                             onUseSystemVoiceChange = onTTSUseSystemVoiceChange,
                             onDismiss = onHideTTSSettings,
                             modifier = Modifier.padding(16.dp)
