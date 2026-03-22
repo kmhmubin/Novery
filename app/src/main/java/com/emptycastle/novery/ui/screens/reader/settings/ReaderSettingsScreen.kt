@@ -46,47 +46,34 @@ import androidx.compose.material.icons.automirrored.filled.FormatAlignRight
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.AccessibilityNew
-import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.Brightness4
 import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.BrightnessAuto
-import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Coffee
 import androidx.compose.material.icons.filled.Contrast
 import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FormatAlignCenter
 import androidx.compose.material.icons.filled.FormatAlignJustify
 import androidx.compose.material.icons.filled.FormatLineSpacing
 import androidx.compose.material.icons.filled.FormatSize
-import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.FullscreenExit
-import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.SpaceBar
 import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Swipe
 import androidx.compose.material.icons.filled.TextDecrease
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.TextIncrease
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.TouchApp
-import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VolumeUp
@@ -321,8 +308,10 @@ fun ReaderSettingsScreen(
                             onSettingsChange = { preferencesManager.updateReaderSettings(it) }
                         )
                         SettingsTab.TTS -> TTSSettings(
+                            settings = settings,
                             colors = colors,
-                            preferencesManager = preferencesManager
+                            preferencesManager = preferencesManager,
+                            onSettingsChange = { preferencesManager.updateReaderSettings(it) }
                         )
                         SettingsTab.ADVANCED -> AdvancedSettings(
                             settings = settings,
@@ -2718,14 +2707,6 @@ private fun AdvancedSettings(
                     colors = colors,
                     onCheckedChange = { onSettingsChange(settings.copy(longPressSelection = it)) }
                 )
-
-                SettingSwitch(
-                    title = "Auto-advance Chapter (TTS)",
-                    subtitle = "Automatically start next chapter when TTS finishes",
-                    checked = settings.ttsAutoAdvanceChapter,
-                    colors = colors,
-                    onCheckedChange = { onSettingsChange(settings.copy(ttsAutoAdvanceChapter = it)) }
-                )
             }
         }
 
@@ -2979,15 +2960,16 @@ private fun AutoHideDelaySelector(
 
 @Composable
 private fun TTSSettings(
+    settings: ReaderSettings,
     colors: ReaderColors,
-    preferencesManager: PreferencesManager
+    preferencesManager: PreferencesManager,
+    onSettingsChange: (ReaderSettings) -> Unit
 ) {
-    // TTS playback settings
+    // TTS playback settings from PreferencesManager (voice-related)
     var ttsSpeed by remember { mutableFloatStateOf(preferencesManager.getTtsSpeed()) }
     var ttsPitch by remember { mutableFloatStateOf(preferencesManager.getTtsPitch()) }
     var ttsAutoScroll by remember { mutableStateOf(preferencesManager.getTtsAutoScroll()) }
     var ttsHighlightSentence by remember { mutableStateOf(preferencesManager.getTtsHighlightSentence()) }
-    var ttsContinueOnChapterEnd by remember { mutableStateOf(preferencesManager.getTtsContinueOnChapterEnd()) }
     var ttsPauseOnCalls by remember { mutableStateOf(preferencesManager.getTtsPauseOnCalls()) }
     var ttsUseSystemVoice by remember { mutableStateOf(preferencesManager.getTtsUseSystemVoice()) }
 
@@ -3021,14 +3003,25 @@ private fun TTSSettings(
                     }
                 )
 
+                // Auto-Advance Chapter - Using ReaderSettings
                 SettingSwitch(
                     title = "Auto-Advance Chapter",
-                    subtitle = "Automatically start next chapter when finished",
-                    checked = ttsContinueOnChapterEnd,
+                    subtitle = "Automatically load and play next chapter when TTS finishes",
+                    checked = settings.ttsAutoAdvanceChapter,
                     colors = colors,
                     onCheckedChange = {
-                        ttsContinueOnChapterEnd = it
-                        preferencesManager.setTtsContinueOnChapterEnd(it)
+                        onSettingsChange(settings.copy(ttsAutoAdvanceChapter = it))
+                    }
+                )
+
+                // Lock Scroll During TTS - Using ReaderSettings
+                SettingSwitch(
+                    title = "Lock Scroll During TTS",
+                    subtitle = "Keep the current sentence visible while TTS is playing",
+                    checked = settings.lockScrollDuringTTS,
+                    colors = colors,
+                    onCheckedChange = {
+                        onSettingsChange(settings.copy(lockScrollDuringTTS = it))
                     }
                 )
 

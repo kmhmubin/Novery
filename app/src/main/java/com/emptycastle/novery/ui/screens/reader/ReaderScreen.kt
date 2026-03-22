@@ -1,5 +1,6 @@
 package com.emptycastle.novery.ui.screens.reader
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -107,6 +108,31 @@ fun ReaderScreen(
     // Initialize context for TTS
     LaunchedEffect(Unit) {
         viewModel.setContext(context)
+    }
+
+    // Auto-advance event feedback
+    LaunchedEffect(Unit) {
+        viewModel.autoAdvanceEvent.collect { event ->
+            when (event) {
+                is AutoAdvanceEvent.Advancing -> {
+                    Toast.makeText(
+                        context,
+                        "Loading next chapter: ${event.nextChapterName}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                is AutoAdvanceEvent.Failed -> {
+                    Toast.makeText(
+                        context,
+                        "Auto-advance failed: ${event.reason}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                AutoAdvanceEvent.Completed -> {
+                    // Optionally show brief confirmation
+                }
+            }
+        }
     }
 
     // Register/unregister with volume key manager

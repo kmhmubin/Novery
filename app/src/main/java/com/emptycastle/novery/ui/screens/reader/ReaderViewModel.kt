@@ -124,6 +124,16 @@ private enum class NavigationSource {
     TTS_AUTO        // TTS auto-advanced (TTS will set position)
 }
 
+// =============================================================================
+// AUTO-ADVANCE EVENT
+// =============================================================================
+
+sealed class AutoAdvanceEvent {
+    data class Advancing(val nextChapterName: String) : AutoAdvanceEvent()
+    data class Failed(val reason: String) : AutoAdvanceEvent()
+    object Completed : AutoAdvanceEvent()
+}
+
 class ReaderViewModel : ViewModel() {
 
     // =========================================================================
@@ -222,6 +232,10 @@ class ReaderViewModel : ViewModel() {
     // TTS ensure visible
     private val _ttsShouldEnsureVisible = MutableStateFlow<Int?>(null)
     val ttsShouldEnsureVisible: StateFlow<Int?> = _ttsShouldEnsureVisible.asStateFlow()
+
+    // Auto-advance event
+    private val _autoAdvanceEvent = MutableSharedFlow<AutoAdvanceEvent>(extraBufferCapacity = 1)
+    val autoAdvanceEvent: SharedFlow<AutoAdvanceEvent> = _autoAdvanceEvent.asSharedFlow()
 
     // Visibility tracking
     private var isReaderVisible = true
@@ -889,8 +903,6 @@ class ReaderViewModel : ViewModel() {
                 if (i == scrollIndex && scrollOffset > 0) {
                     // We're partially scrolled into this segment
                     // Estimate which sentence is visible based on offset
-                    // For now, use simple heuristic: if offset > 100px, start from sentence 1
-                    // A more sophisticated approach would use measured sentence heights
                     val sentenceIndex = estimateSentenceFromOffset(item.segment, scrollOffset)
                     return StableTTSCoordinate(
                         chapterIndex = item.chapterIndex,
@@ -1022,9 +1034,15 @@ class ReaderViewModel : ViewModel() {
         lastNavigationSource = NavigationSource.TTS_AUTO
 
         viewModelScope.launch {
+            // Emit event to show UI feedback
+            _autoAdvanceEvent.emit(AutoAdvanceEvent.Advancing(chapter.name))
+
             blockTTSSync.set(true)
 
             try {
+                // Small delay for visual feedback
+                delay(300)
+
                 // Load chapter if not already loaded
                 if (!_uiState.value.loadedChapters.containsKey(chapterIndex)) {
                     Log.d(TAG, "Loading chapter $chapterIndex for TTS auto-advance")
@@ -1038,6 +1056,7 @@ class ReaderViewModel : ViewModel() {
 
                     if (!_uiState.value.loadedChapters.containsKey(chapterIndex)) {
                         Log.e(TAG, "Failed to load chapter $chapterIndex for TTS auto-advance")
+                        _autoAdvanceEvent.emit(AutoAdvanceEvent.Failed("Failed to load chapter"))
                         stopTTSInternal()
                         return@launch
                     }
@@ -1090,13 +1109,20 @@ class ReaderViewModel : ViewModel() {
                     TTSServiceManager.updateContent(ttsContent, keepSegmentIndex = false)
                     TTSServiceManager.seekToSegment(firstSentenceIndex)
 
-                    // Resume playback - the service stopped after emitting playbackComplete
+                    // Resume playback
                     TTSServiceManager.resume()
+
+                    _autoAdvanceEvent.emit(AutoAdvanceEvent.Completed)
 
                 } else {
                     Log.e(TAG, "No sentences found for chapter $chapterIndex")
+                    _autoAdvanceEvent.emit(AutoAdvanceEvent.Failed("No content in chapter"))
                     stopTTSInternal()
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during auto-advance: ${e.message}")
+                _autoAdvanceEvent.emit(AutoAdvanceEvent.Failed(e.message ?: "Unknown error"))
+                stopTTSInternal()
             } finally {
                 blockTTSSync.set(false)
             }
