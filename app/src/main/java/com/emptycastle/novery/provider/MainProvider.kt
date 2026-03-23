@@ -98,6 +98,17 @@ abstract class MainProvider {
     }
 
     /**
+     * Perform POST request with JSON body
+     */
+    protected suspend fun postJson(
+        url: String,
+        json: String,
+        headers: Map<String, String> = emptyMap()
+    ): NetworkClient.NetworkResponse {
+        return NetworkClient.postJson(url, json, headers)
+    }
+
+    /**
      * Fix relative URL to absolute URL
      */
     protected fun fixUrl(url: String?): String? {
