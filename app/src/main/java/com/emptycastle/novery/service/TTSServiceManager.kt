@@ -29,6 +29,22 @@ object TTSServiceManager {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    init {
+        // React to service stopping to clean up stale references
+        scope.launch {
+            TTSService.serviceState.collect { state ->
+                if (state == TTSService.ServiceState.Stopped && isBound) {
+                    service = null
+                    isBound = false
+                    _isConnected.value = false
+                    segmentChangedJob?.cancel()
+                    playbackCompleteJob?.cancel()
+                    chapterChangedJob?.cancel()
+                }
+            }
+        }
+    }
+
     private var service: TTSService? = null
     private var isBound = false
     private var bindingContextRef: WeakReference<Context>? = null
@@ -242,6 +258,19 @@ object TTSServiceManager {
 
     fun stop() {
         service?.stop()
+        // Clean up since we know the service will stop
+        service = null
+        isBound = false
+        _isConnected.value = false
+        _playbackState.value = TTSPlaybackState()
+        segmentChangedJob?.cancel()
+        playbackCompleteJob?.cancel()
+        chapterChangedJob?.cancel()
+        pendingRequest = null
+
+        try {
+            bindingContextRef?.get()?.unbindService(connection)
+        } catch (e: Exception) { }
     }
 
     fun next() {

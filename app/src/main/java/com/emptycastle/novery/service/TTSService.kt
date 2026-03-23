@@ -1381,6 +1381,8 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         backgroundLoader?.clear()
         backgroundLoader = null
 
+        ttsInitialized = false
+
         tts?.stop()
         tts?.shutdown()
         tts = null
