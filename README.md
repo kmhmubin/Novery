@@ -1,3 +1,5 @@
+<img width="300" height="300" alt="image-removebg-preview" src="https://github.com/user-attachments/assets/e6670700-ff66-4934-a36d-b43442a16442" />
+
 # Novery
 
 <div align="center">
@@ -8,7 +10,7 @@
 [![Min SDK](https://img.shields.io/badge/Min%20SDK-26-blue.svg)](https://developer.android.com/about/versions/oreo)
 [![License](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
 
-[Download](#installation) · [Features](#features) · [Screenshots](#screenshots) · [Contributing](#contributing)
+[Download](#installation) · [Features](#features) · [Screenshots](#screenshots)
 
 </div>
 
@@ -19,6 +21,8 @@
 **Novery** is a free, open-source Android app for reading web novels from multiple sources. Inspired by [Tachiyomi](https://github.com/tachiyomiorg/tachiyomi) and [QuickNovel](https://github.com/LagradOst/QuickNovel), it provides a clean, customizable reading experience with **Text-to-Speech**, **offline reading**, and **personalized recommendations** — all built with **Jetpack Compose** and **Material 3**.
 
 ---
+
+<div id="features"></div>
 
 ## ✨ Features
 
@@ -70,6 +74,8 @@
 
 ---
 
+<div id="screenshots"></div>
+
 ## 📸 Screenshots
 
 <div align="center" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 16px;">
@@ -91,6 +97,8 @@
 
 ---
 
+<div id="installation"></div>
+
 ## 📥 Installation
 
 ### Download
@@ -106,22 +114,6 @@ cd Novery
 ./gradlew installDebug
 ```
 Requires **Android Studio Koala+**, **JDK 11+**, **Kotlin 2.0.21**.
-
----
-
-## 🛠 Tech Stack
-
-| Component     | Technology |
-|---------------|------------|
-| Language      | Kotlin |
-| UI            | Jetpack Compose · Material 3 |
-| Architecture  | MVVM · Repository pattern |
-| Database      | Room |
-| Async         | Coroutines · Flow |
-| Networking    | OkHttp · Jsoup |
-| Images        | Coil |
-| Serialization | Kotlinx Serialization · Gson |
-| TTS           | Android TextToSpeech API |
 
 ---
 
