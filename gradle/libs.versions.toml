@@ -14,6 +14,7 @@ paletteKtx = "1.0.0"
 roomCommonJvm = "2.8.4"
 adapters = "3.2.0-alpha11"
 animation = "1.10.1"
+animationVersion = "1.10.6"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -36,6 +37,7 @@ androidx-palette-ktx = { group = "androidx.palette", name = "palette-ktx", versi
 androidx-room-common-jvm = { group = "androidx.room", name = "room-common-jvm", version.ref = "roomCommonJvm" }
 androidx-adapters = { group = "androidx.databinding", name = "adapters", version.ref = "adapters" }
 androidx-compose-animation = { group = "androidx.compose.animation", name = "animation", version.ref = "animation" }
+androidx-animation = { group = "androidx.compose.animation", name = "animation", version.ref = "animationVersion" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

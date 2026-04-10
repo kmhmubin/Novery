@@ -13,6 +13,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.emptycastle.novery.domain.model.AppSettings
+import com.emptycastle.novery.recommendation.TagNormalizer
 import com.emptycastle.novery.ui.components.NoveryBottomNavBarWithInsets
 import com.emptycastle.novery.ui.navigation.HomeTabs
 import com.emptycastle.novery.ui.navigation.rememberTabNavigationState
@@ -35,7 +36,8 @@ fun HomeScreen(
     onNavigateToDownloads: () -> Unit,
     onNavigateToAbout: () -> Unit,
     onNavigateToStorage: () -> Unit,
-    onNavigateToOnboarding: () -> Unit = {}
+    onNavigateToOnboarding: () -> Unit = {},
+    onNavigateToTagExplorer: (TagNormalizer.TagCategory) -> Unit = {}
 ) {
     // Initialize shared state
     LaunchedEffect(Unit) {
@@ -46,6 +48,14 @@ fun HomeScreen(
     val navBackStackEntry by tabNavState.navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val currentTab = currentRoute?.let { HomeTabs.fromRoute(it) } ?: HomeTabs.LIBRARY
+
+    // Handle navigation to For You tab with tag filter
+    LaunchedEffect(currentRoute) {
+        if (com.emptycastle.novery.ui.screens.home.shared.RecommendationNavigationHelper.consumeNavigationRequest()) {
+            // Switch to For You tab
+            tabNavState.navigateToTab(HomeTabs.FOR_YOU)
+        }
+    }
 
     // Handle system back button
     BackHandler(enabled = currentTab != HomeTabs.LIBRARY) {
@@ -98,7 +108,8 @@ fun HomeScreen(
                         onNavigateToBrowse = {
                             tabNavState.navigateToTab(HomeTabs.BROWSE)
                         },
-                        onNavigateToOnboarding = onNavigateToOnboarding
+                        onNavigateToOnboarding = onNavigateToOnboarding,
+                        onNavigateToTagExplorer = onNavigateToTagExplorer
                     )
                 }
 

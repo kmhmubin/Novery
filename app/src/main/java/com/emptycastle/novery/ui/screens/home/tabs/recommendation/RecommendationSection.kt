@@ -26,12 +26,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.emptycastle.novery.recommendation.TagNormalizer
 import com.emptycastle.novery.recommendation.model.Recommendation
 import com.emptycastle.novery.recommendation.model.RecommendationGroup
 import com.emptycastle.novery.recommendation.model.RecommendationType
@@ -42,11 +44,27 @@ fun RecommendationSection(
     onNovelClick: (novelUrl: String, providerName: String) -> Unit,
     onNovelLongClick: (Recommendation) -> Unit,
     onQuickDismiss: (Recommendation) -> Unit,
-    onSeeAllClick: (() -> Unit)? = null,
+    onSeeAllClick: ((TagNormalizer.TagCategory) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val sectionColor = getSectionColor(group.type)
     val sectionIcon = getSectionIcon(group.type)
+
+    // Extract tag from group title if it's a genre-based recommendation
+    val tagCategory = remember(group.title) {
+        if (group.title.startsWith("Best in ") || group.title.startsWith("Trending on ")) {
+            val tagName = group.title.removePrefix("Best in ").removePrefix("Trending on ")
+            // Try to find matching tag category
+            TagNormalizer.TagCategory.entries.find {
+                TagNormalizer.getDisplayName(it).equals(tagName, ignoreCase = true)
+            }
+        } else null
+    }
+
+    // Only show "See All" if we have both the callback AND a valid tag
+    val showSeeAllButton = onSeeAllClick != null &&
+            tagCategory != null &&
+            group.recommendations.size > 5
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -96,9 +114,10 @@ fun RecommendationSection(
                 }
             }
 
-            if (onSeeAllClick != null && group.recommendations.size > 5) {
+            // Show "See All" button only if we have a valid tag and callback
+            if (showSeeAllButton && tagCategory != null) {
                 IconButton(
-                    onClick = onSeeAllClick,
+                    onClick = { onSeeAllClick?.invoke(tagCategory) },
                     modifier = Modifier.size(36.dp),
                     colors = IconButtonDefaults.iconButtonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh

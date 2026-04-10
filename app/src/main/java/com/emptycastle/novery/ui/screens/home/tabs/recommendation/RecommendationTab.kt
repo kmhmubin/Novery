@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.emptycastle.novery.recommendation.TagNormalizer
 import com.emptycastle.novery.recommendation.model.Recommendation
 import com.emptycastle.novery.recommendation.model.RecommendationType
 import com.emptycastle.novery.ui.screens.home.tabs.recommendation.components.EmptyRecommendations
@@ -58,7 +59,8 @@ import kotlinx.coroutines.launch
 fun RecommendationTab(
     onNavigateToDetails: (novelUrl: String, providerName: String) -> Unit = { _, _ -> },
     onNavigateToBrowse: () -> Unit = {},
-    onNavigateToOnboarding: () -> Unit = {}
+    onNavigateToOnboarding: () -> Unit = {},
+    onNavigateToTagExplorer: (TagNormalizer.TagCategory) -> Unit = {}
 ) {
     val viewModel: RecommendationViewModel = viewModel()
     val uiState by viewModel.uiState.collectAsState()
@@ -75,6 +77,28 @@ fun RecommendationTab(
     var showSettingsSheet by remember { mutableStateOf(false) }
     var selectedRecommendation by remember { mutableStateOf<Recommendation?>(null) }
     var lastHiddenNovel by remember { mutableStateOf<Pair<String, String>?>(null) }
+
+    // Check for pending tag filter from navigation
+    LaunchedEffect(Unit) {
+        val pendingTag = com.emptycastle.novery.ui.screens.home.shared.RecommendationNavigationHelper
+            .consumePendingTag()
+
+        if (pendingTag != null) {
+            // Apply the tag filter with BOOSTED type to prioritize novels with this tag
+            viewModel.setTagFilter(pendingTag, com.emptycastle.novery.data.local.entity.TagFilterType.BOOSTED)
+
+            // Show the filter sheet so user can see what's filtered
+            showFilterSheet = true
+
+            // Show a snackbar to inform the user
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = "Showing novels with: ${com.emptycastle.novery.recommendation.TagNormalizer.getDisplayName(pendingTag)}",
+                    duration = SnackbarDuration.Short
+                )
+            }
+        }
+    }
 
     val hasSettingsChanges = hiddenNovels.isNotEmpty() ||
             blockedAuthors.isNotEmpty() ||
@@ -209,6 +233,8 @@ fun RecommendationTab(
                         }
 
                         // Regular recommendation sections
+                        // Inside RecommendationTab, update each RecommendationSection call:
+
                         itemsIndexed(
                             items = regularGroups,
                             key = { index, group -> "group_${group.type.name}_$index" }
@@ -238,6 +264,9 @@ fun RecommendationTab(
                                             }
                                         }
                                     }
+                                },
+                                onSeeAllClick = { tagCategory ->
+                                    onNavigateToTagExplorer(tagCategory)
                                 }
                             )
                         }

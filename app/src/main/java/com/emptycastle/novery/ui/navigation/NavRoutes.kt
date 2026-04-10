@@ -1,5 +1,6 @@
 package com.emptycastle.novery.ui.navigation
 
+import com.emptycastle.novery.recommendation.TagNormalizer
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -81,6 +82,19 @@ sealed class NavRoutes(val route: String) {
             val encodedNovelUrl = encodeUrl(novelUrl)
             val encodedProvider = encodeUrl(providerName)
             return "reader/$encodedChapterUrl/$encodedNovelUrl/$encodedProvider"
+        }
+    }
+
+    // ================================================================
+    // TAG EXPLORER
+    // ================================================================
+
+    /**
+     * Tag explorer (browse novels by genre/tag)
+     */
+    object TagExplorer : NavRoutes("tag_explorer/{tagName}") {
+        fun createRoute(tagCategory: TagNormalizer.TagCategory): String {
+            return "tag_explorer/${tagCategory.name}"
         }
     }
 

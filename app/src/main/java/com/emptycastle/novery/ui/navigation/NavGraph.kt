@@ -27,6 +27,7 @@ import com.emptycastle.novery.ui.screens.reader.ReaderScreen
 import com.emptycastle.novery.ui.screens.reader.settings.ReaderSettingsScreen
 import com.emptycastle.novery.ui.screens.settings.SettingsScreen
 import com.emptycastle.novery.ui.screens.settings.StorageScreen
+import com.emptycastle.novery.ui.screens.tagexplorer.TagExplorerScreen
 
 @Composable
 fun NoveryNavGraph(
@@ -103,9 +104,15 @@ fun NoveryNavGraph(
                 },
                 onNavigateToOnboarding = {
                     navController.navigate(NavRoutes.Onboarding.route)
+                },
+                onNavigateToTagExplorer = { tagCategory -> // NEW
+                    navController.navigate(
+                        NavRoutes.TagExplorer.createRoute(tagCategory)
+                    )
                 }
             )
         }
+
 
         // ================================================================
         // NOTIFICATIONS
@@ -296,6 +303,33 @@ fun NoveryNavGraph(
                 },
                 onNavigateToDownloads = {
                     navController.navigate(NavRoutes.Downloads.route)
+                },
+                onNavigateToTagExplorer = { tagCategory -> // NEW
+                    navController.navigate(
+                        NavRoutes.TagExplorer.createRoute(tagCategory)
+                    )
+                }
+            )
+        }
+
+        // ================================================================
+        // TAG EXPLORER
+        // ================================================================
+        composable(
+            route = NavRoutes.TagExplorer.route,
+            arguments = listOf(
+                navArgument("tagName") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val tagName = backStackEntry.arguments?.getString("tagName") ?: ""
+
+            TagExplorerScreen(
+                tagName = tagName,
+                onBack = { navController.popBackStack() },
+                onNovelClick = { novelUrl, providerName ->
+                    navController.navigate(
+                        NavRoutes.Details.createRoute(novelUrl, providerName)
+                    )
                 }
             )
         }
