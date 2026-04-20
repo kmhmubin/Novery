@@ -5,6 +5,8 @@ import com.emptycastle.novery.data.local.NovelDatabase
 import com.emptycastle.novery.data.local.PreferencesManager
 import com.emptycastle.novery.data.remote.CloudflareManager
 import com.emptycastle.novery.data.repository.RepositoryProvider
+import com.emptycastle.novery.provider.AllNovelProvider
+import com.emptycastle.novery.provider.FreeWebNovelProvider
 import com.emptycastle.novery.provider.LibReadProvider
 import com.emptycastle.novery.provider.LnoriProvider
 import com.emptycastle.novery.provider.MainProvider
@@ -73,5 +75,7 @@ class NoveryApp : Application() {
         MainProvider.register(NovelsOnlineProvider())
         MainProvider.register(LnoriProvider())
         MainProvider.register(WebnovelProvider())
+        MainProvider.register(FreeWebNovelProvider())
+        MainProvider.register(AllNovelProvider())
     }
 }
