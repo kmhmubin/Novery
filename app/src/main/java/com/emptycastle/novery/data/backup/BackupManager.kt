@@ -498,7 +498,14 @@ private fun AppSettings.toBackup() = AppSettingsBackup(
     searchDisplayMode = searchDisplayMode.name,
     ratingFormat = ratingFormat.name,
     defaultLibrarySort = defaultLibrarySort.name,
-    defaultLibraryFilter = defaultLibraryFilter.name,
+    defaultLibraryFilter = LibraryFilter.sanitizeDefault(
+        defaultLibraryFilter,
+        enabledLibraryFilters
+    ).name,
+    hideSpicyLibraryContent = hideSpicyLibraryContent,
+    enabledLibraryFilters = LibraryFilter.shelfOptions()
+        .filter { it in enabledLibraryFilters }
+        .map { it.name },
     autoDownloadEnabled = autoDownloadEnabled,
     autoDownloadOnWifiOnly = autoDownloadOnWifiOnly,
     autoDownloadLimit = autoDownloadLimit,
@@ -636,33 +643,53 @@ private fun ReadingStreakBackup.toEntity() = ReadingStreakEntity(
     updatedAt = updatedAt
 )
 
-private fun AppSettingsBackup.toAppSettings() = AppSettings(
-    themeMode = try { ThemeMode.valueOf(themeMode) } catch (e: Exception) { ThemeMode.DARK },
-    amoledBlack = amoledBlack,
-    useDynamicColor = useDynamicColor,
-    uiDensity = try { UiDensity.valueOf(uiDensity) } catch (e: Exception) { UiDensity.DEFAULT },
-    libraryGridColumns = GridColumns.fromInt(libraryGridColumns),
-    browseGridColumns = GridColumns.fromInt(browseGridColumns),
-    searchGridColumns = GridColumns.fromInt(searchGridColumns),
-    showBadges = showBadges,
-    libraryDisplayMode = try { DisplayMode.valueOf(libraryDisplayMode) } catch (e: Exception) { DisplayMode.GRID },
-    browseDisplayMode = try { DisplayMode.valueOf(browseDisplayMode) } catch (e: Exception) { DisplayMode.GRID },
-    searchDisplayMode = try { DisplayMode.valueOf(searchDisplayMode) } catch (e: Exception) { DisplayMode.GRID },
-    ratingFormat = try { RatingFormat.valueOf(ratingFormat) } catch (e: Exception) { RatingFormat.TEN_POINT },
-    defaultLibrarySort = try { LibrarySortOrder.valueOf(defaultLibrarySort) } catch (e: Exception) { LibrarySortOrder.LAST_READ },
-    defaultLibraryFilter = try { LibraryFilter.valueOf(defaultLibraryFilter) } catch (e: Exception) { LibraryFilter.DOWNLOADED },
-    autoDownloadEnabled = autoDownloadEnabled,
-    autoDownloadOnWifiOnly = autoDownloadOnWifiOnly,
-    autoDownloadLimit = autoDownloadLimit,
-    autoDownloadForStatuses = autoDownloadForStatuses.mapNotNull {
-        try { ReadingStatus.valueOf(it) } catch (e: Exception) { null }
-    }.toSet(),
-    searchResultsPerProvider = searchResultsPerProvider,
-    keepScreenOn = keepScreenOn,
-    infiniteScroll = infiniteScroll,
-    providerOrder = providerOrder,
-    disabledProviders = disabledProviders.toSet()
-)
+private fun AppSettingsBackup.toAppSettings(): AppSettings {
+    val restoredEnabledLibraryFilters = LibraryFilter.sanitizeEnabledShelves(
+        enabledLibraryFilters.mapNotNull {
+            try { LibraryFilter.valueOf(it) } catch (e: Exception) { null }
+        }.toSet()
+    )
+
+    return AppSettings(
+        themeMode = try { ThemeMode.valueOf(themeMode) } catch (e: Exception) { ThemeMode.DARK },
+        amoledBlack = amoledBlack,
+        useDynamicColor = useDynamicColor,
+        uiDensity = try { UiDensity.valueOf(uiDensity) } catch (e: Exception) { UiDensity.DEFAULT },
+        libraryGridColumns = GridColumns.fromInt(libraryGridColumns),
+        browseGridColumns = GridColumns.fromInt(browseGridColumns),
+        searchGridColumns = GridColumns.fromInt(searchGridColumns),
+        showBadges = showBadges,
+        libraryDisplayMode = try { DisplayMode.valueOf(libraryDisplayMode) } catch (e: Exception) { DisplayMode.GRID },
+        browseDisplayMode = try { DisplayMode.valueOf(browseDisplayMode) } catch (e: Exception) { DisplayMode.GRID },
+        searchDisplayMode = try { DisplayMode.valueOf(searchDisplayMode) } catch (e: Exception) { DisplayMode.GRID },
+        ratingFormat = try { RatingFormat.valueOf(ratingFormat) } catch (e: Exception) { RatingFormat.TEN_POINT },
+        defaultLibrarySort = try { LibrarySortOrder.valueOf(defaultLibrarySort) } catch (e: Exception) { LibrarySortOrder.LAST_READ },
+        enabledLibraryFilters = restoredEnabledLibraryFilters,
+        defaultLibraryFilter = try {
+            LibraryFilter.sanitizeDefault(
+                LibraryFilter.valueOf(defaultLibraryFilter),
+                restoredEnabledLibraryFilters
+            )
+        } catch (e: Exception) {
+            LibraryFilter.sanitizeDefault(
+                LibraryFilter.DOWNLOADED,
+                restoredEnabledLibraryFilters
+            )
+        },
+        hideSpicyLibraryContent = hideSpicyLibraryContent,
+        autoDownloadEnabled = autoDownloadEnabled,
+        autoDownloadOnWifiOnly = autoDownloadOnWifiOnly,
+        autoDownloadLimit = autoDownloadLimit,
+        autoDownloadForStatuses = autoDownloadForStatuses.mapNotNull {
+            try { ReadingStatus.valueOf(it) } catch (e: Exception) { null }
+        }.toSet(),
+        searchResultsPerProvider = searchResultsPerProvider,
+        keepScreenOn = keepScreenOn,
+        infiniteScroll = infiniteScroll,
+        providerOrder = providerOrder,
+        disabledProviders = disabledProviders.toSet()
+    )
+}
 
 private fun ReaderSettingsBackup.toReaderSettings(): ReaderSettings {
     val fontFamily = FontFamily.fromId(fontFamily) ?: FontFamily.SYSTEM_SERIF

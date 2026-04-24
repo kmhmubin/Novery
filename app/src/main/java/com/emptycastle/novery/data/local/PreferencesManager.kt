@@ -73,6 +73,10 @@ class PreferencesManager(context: Context) {
     private val _favoriteProviders = MutableStateFlow<Set<String>>(loadFavoriteProviders())
     val favoriteProviders: StateFlow<Set<String>> = _favoriteProviders.asStateFlow()
 
+    // Session-only privacy state for the hidden spicy shelf.
+    private val _isSpicyShelfRevealed = MutableStateFlow(false)
+    val isSpicyShelfRevealed: StateFlow<Boolean> = _isSpicyShelfRevealed.asStateFlow()
+
     // =========================================================================
     // AUTHOR NOTE SETTINGS
     // =========================================================================
@@ -331,6 +335,24 @@ class PreferencesManager(context: Context) {
         val disabledString = prefs.getString(KEY_DISABLED_PROVIDERS, "")
         val disabledSet = if (disabledString.isNullOrBlank()) emptySet() else disabledString.split(",").toSet()
 
+        val enabledLibraryFiltersString = prefs.getString(KEY_ENABLED_LIBRARY_FILTERS, null)
+        val enabledLibraryFilters = when {
+            enabledLibraryFiltersString == null -> LibraryFilter.defaultEnabledShelves()
+            enabledLibraryFiltersString.isBlank() -> emptySet()
+            else -> LibraryFilter.sanitizeEnabledShelves(
+                enabledLibraryFiltersString
+                    .split(",")
+                    .mapNotNull { filterName ->
+                        try {
+                            LibraryFilter.valueOf(filterName.trim())
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+                    .toSet()
+            )
+        }
+
         // Load custom theme colors
         val customThemeColors = CustomThemeColors(
             primaryColor = prefs.getLong(
@@ -391,10 +413,17 @@ class PreferencesManager(context: Context) {
             } catch (e: Exception) {
                 RatingFormat.TEN_POINT
             },
-            defaultLibraryFilter = LibraryFilter.valueOf(
-                prefs.getString(KEY_DEFAULT_LIBRARY_FILTER, LibraryFilter.DOWNLOADED.name)
-                    ?: LibraryFilter.DOWNLOADED.name
-            ),
+            defaultLibraryFilter = try {
+                val storedFilter = LibraryFilter.valueOf(
+                    prefs.getString(KEY_DEFAULT_LIBRARY_FILTER, LibraryFilter.DOWNLOADED.name)
+                        ?: LibraryFilter.DOWNLOADED.name
+                )
+                LibraryFilter.sanitizeDefault(storedFilter, enabledLibraryFilters)
+            } catch (e: Exception) {
+                LibraryFilter.sanitizeDefault(LibraryFilter.DOWNLOADED, enabledLibraryFilters)
+            },
+            hideSpicyLibraryContent = prefs.getBoolean(KEY_HIDE_SPICY_LIBRARY_CONTENT, true),
+            enabledLibraryFilters = enabledLibraryFilters,
             keepScreenOn = prefs.getBoolean(KEY_KEEP_SCREEN_ON, true),
             infiniteScroll = prefs.getBoolean(KEY_INFINITE_SCROLL, false),
             autoDownloadEnabled = prefs.getBoolean(KEY_AUTO_DOWNLOAD_ENABLED, false),
@@ -407,45 +436,63 @@ class PreferencesManager(context: Context) {
     }
 
     fun updateAppSettings(settings: AppSettings) {
+        val sanitizedEnabledLibraryFilters = LibraryFilter.sanitizeEnabledShelves(
+            settings.enabledLibraryFilters
+        )
+        val sanitizedSettings = settings.copy(
+            enabledLibraryFilters = sanitizedEnabledLibraryFilters,
+            defaultLibraryFilter = LibraryFilter.sanitizeDefault(
+                settings.defaultLibraryFilter,
+                sanitizedEnabledLibraryFilters
+            )
+        )
+
         prefs.edit().apply {
-            putString(KEY_THEME_MODE, settings.themeMode.name)
-            putBoolean(KEY_AMOLED_BLACK, settings.amoledBlack)
-            putBoolean(KEY_DYNAMIC_COLOR, settings.useDynamicColor)
-            putBoolean(KEY_USE_CUSTOM_THEME, settings.useCustomTheme)
+            putString(KEY_THEME_MODE, sanitizedSettings.themeMode.name)
+            putBoolean(KEY_AMOLED_BLACK, sanitizedSettings.amoledBlack)
+            putBoolean(KEY_DYNAMIC_COLOR, sanitizedSettings.useDynamicColor)
+            putBoolean(KEY_USE_CUSTOM_THEME, sanitizedSettings.useCustomTheme)
 
             // Custom theme colors
-            putLong(KEY_CUSTOM_PRIMARY_COLOR, settings.customThemeColors.primaryColor)
-            putLong(KEY_CUSTOM_SECONDARY_COLOR, settings.customThemeColors.secondaryColor)
-            putLong(KEY_CUSTOM_BACKGROUND_COLOR, settings.customThemeColors.backgroundColor)
-            putLong(KEY_CUSTOM_SURFACE_COLOR, settings.customThemeColors.surfaceColor)
+            putLong(KEY_CUSTOM_PRIMARY_COLOR, sanitizedSettings.customThemeColors.primaryColor)
+            putLong(KEY_CUSTOM_SECONDARY_COLOR, sanitizedSettings.customThemeColors.secondaryColor)
+            putLong(KEY_CUSTOM_BACKGROUND_COLOR, sanitizedSettings.customThemeColors.backgroundColor)
+            putLong(KEY_CUSTOM_SURFACE_COLOR, sanitizedSettings.customThemeColors.surfaceColor)
 
-            putString(KEY_UI_DENSITY, settings.uiDensity.name)
-            putInt(KEY_LIBRARY_GRID_COLUMNS, GridColumns.toInt(settings.libraryGridColumns))
-            putInt(KEY_BROWSE_GRID_COLUMNS, GridColumns.toInt(settings.browseGridColumns))
-            putInt(KEY_SEARCH_GRID_COLUMNS, GridColumns.toInt(settings.searchGridColumns))
-            putInt(KEY_SEARCH_RESULTS_PER_PROVIDER, settings.searchResultsPerProvider)
-            putBoolean(KEY_SHOW_BADGES, settings.showBadges)
-            putString(KEY_DEFAULT_LIBRARY_SORT, settings.defaultLibrarySort.name)
-            putString(KEY_DEFAULT_LIBRARY_FILTER, settings.defaultLibraryFilter.name)
-            putBoolean(KEY_KEEP_SCREEN_ON, settings.keepScreenOn)
-            putBoolean(KEY_INFINITE_SCROLL, settings.infiniteScroll)
-            putBoolean(KEY_AUTO_DOWNLOAD_ENABLED, settings.autoDownloadEnabled)
-            putBoolean(KEY_AUTO_DOWNLOAD_WIFI_ONLY, settings.autoDownloadOnWifiOnly)
-            putInt(KEY_AUTO_DOWNLOAD_LIMIT, settings.autoDownloadLimit)
+            putString(KEY_UI_DENSITY, sanitizedSettings.uiDensity.name)
+            putInt(KEY_LIBRARY_GRID_COLUMNS, GridColumns.toInt(sanitizedSettings.libraryGridColumns))
+            putInt(KEY_BROWSE_GRID_COLUMNS, GridColumns.toInt(sanitizedSettings.browseGridColumns))
+            putInt(KEY_SEARCH_GRID_COLUMNS, GridColumns.toInt(sanitizedSettings.searchGridColumns))
+            putInt(KEY_SEARCH_RESULTS_PER_PROVIDER, sanitizedSettings.searchResultsPerProvider)
+            putBoolean(KEY_SHOW_BADGES, sanitizedSettings.showBadges)
+            putString(KEY_DEFAULT_LIBRARY_SORT, sanitizedSettings.defaultLibrarySort.name)
+            putString(KEY_DEFAULT_LIBRARY_FILTER, sanitizedSettings.defaultLibraryFilter.name)
+            putBoolean(KEY_HIDE_SPICY_LIBRARY_CONTENT, sanitizedSettings.hideSpicyLibraryContent)
+            putString(
+                KEY_ENABLED_LIBRARY_FILTERS,
+                LibraryFilter.shelfOptions()
+                    .filter { it in sanitizedSettings.enabledLibraryFilters }
+                    .joinToString(",") { it.name }
+            )
+            putBoolean(KEY_KEEP_SCREEN_ON, sanitizedSettings.keepScreenOn)
+            putBoolean(KEY_INFINITE_SCROLL, sanitizedSettings.infiniteScroll)
+            putBoolean(KEY_AUTO_DOWNLOAD_ENABLED, sanitizedSettings.autoDownloadEnabled)
+            putBoolean(KEY_AUTO_DOWNLOAD_WIFI_ONLY, sanitizedSettings.autoDownloadOnWifiOnly)
+            putInt(KEY_AUTO_DOWNLOAD_LIMIT, sanitizedSettings.autoDownloadLimit)
             putString(
                 KEY_AUTO_DOWNLOAD_STATUSES,
-                settings.autoDownloadForStatuses.joinToString(",") { it.name }
+                sanitizedSettings.autoDownloadForStatuses.joinToString(",") { it.name }
             )
-            putString(KEY_RATING_FORMAT, settings.ratingFormat.name)
-            putString(KEY_PROVIDER_ORDER, settings.providerOrder.joinToString(","))
-            putString(KEY_DISABLED_PROVIDERS, settings.disabledProviders.joinToString(","))
-            putString(KEY_LIBRARY_DISPLAY_MODE, settings.libraryDisplayMode.name)
-            putString(KEY_BROWSE_DISPLAY_MODE, settings.browseDisplayMode.name)
-            putString(KEY_SEARCH_DISPLAY_MODE, settings.searchDisplayMode.name)
+            putString(KEY_RATING_FORMAT, sanitizedSettings.ratingFormat.name)
+            putString(KEY_PROVIDER_ORDER, sanitizedSettings.providerOrder.joinToString(","))
+            putString(KEY_DISABLED_PROVIDERS, sanitizedSettings.disabledProviders.joinToString(","))
+            putString(KEY_LIBRARY_DISPLAY_MODE, sanitizedSettings.libraryDisplayMode.name)
+            putString(KEY_BROWSE_DISPLAY_MODE, sanitizedSettings.browseDisplayMode.name)
+            putString(KEY_SEARCH_DISPLAY_MODE, sanitizedSettings.searchDisplayMode.name)
 
             apply()
         }
-        _appSettings.value = settings
+        _appSettings.value = sanitizedSettings
     }
 
     fun updateRatingFormat(format: RatingFormat) {
@@ -503,6 +550,23 @@ class PreferencesManager(context: Context) {
 
     fun updateAutoDownloadStatuses(statuses: Set<ReadingStatus>) {
         updateAppSettings(_appSettings.value.copy(autoDownloadForStatuses = statuses))
+    }
+
+    fun setSpicyShelfRevealed(revealed: Boolean) {
+        _isSpicyShelfRevealed.value = revealed
+    }
+
+    fun setLibraryShelfEnabled(filter: LibraryFilter, enabled: Boolean) {
+        if (filter == LibraryFilter.ALL) return
+
+        val current = _appSettings.value.enabledLibraryFilters.toMutableSet()
+        if (enabled) current.add(filter) else current.remove(filter)
+
+        if (filter == LibraryFilter.SPICY && !enabled) {
+            _isSpicyShelfRevealed.value = false
+        }
+
+        updateAppSettings(_appSettings.value.copy(enabledLibraryFilters = current))
     }
 
     // =========================================================================
@@ -1348,6 +1412,13 @@ class PreferencesManager(context: Context) {
             put("showBadges", settings.showBadges)
             put("defaultLibrarySort", settings.defaultLibrarySort.name)
             put("defaultLibraryFilter", settings.defaultLibraryFilter.name)
+            put("hideSpicyLibraryContent", settings.hideSpicyLibraryContent)
+            put(
+                "enabledLibraryFilters",
+                LibraryFilter.shelfOptions()
+                    .filter { it in settings.enabledLibraryFilters }
+                    .map { it.name }
+            )
             put("keepScreenOn", settings.keepScreenOn)
             put("infiniteScroll", settings.infiniteScroll)
             put("autoDownloadEnabled", settings.autoDownloadEnabled)
@@ -1402,6 +1473,7 @@ class PreferencesManager(context: Context) {
     fun resetToDefaults() {
         // Reset app settings to defaults
         updateAppSettings(AppSettings())
+        _isSpicyShelfRevealed.value = false
 
         // Reset reader settings to defaults
         resetReaderSettings()
@@ -1431,6 +1503,7 @@ class PreferencesManager(context: Context) {
      */
     fun resetAppSettings() {
         updateAppSettings(AppSettings())
+        _isSpicyShelfRevealed.value = false
     }
 
     /**
@@ -1666,6 +1739,8 @@ class PreferencesManager(context: Context) {
         private const val KEY_SHOW_BADGES = "show_badges"
         private const val KEY_DEFAULT_LIBRARY_SORT = "default_library_sort"
         private const val KEY_DEFAULT_LIBRARY_FILTER = "default_library_filter"
+        private const val KEY_HIDE_SPICY_LIBRARY_CONTENT = "hide_spicy_library_content"
+        private const val KEY_ENABLED_LIBRARY_FILTERS = "enabled_library_filters"
         private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         private const val KEY_INFINITE_SCROLL = "infinite_scroll"
         private const val KEY_SEARCH_RESULTS_PER_PROVIDER = "search_results_per_provider"
