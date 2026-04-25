@@ -19,15 +19,11 @@ import javax.crypto.spec.SecretKeySpec
 /**
  * Provider for wtr-lab.com
  *
- * This site uses Next.js with SSR. Data is available in:
- * - __NEXT_DATA__ script tag (JSON with pageProps)
- * - Various API endpoints for chapters and content
- *
- * Chapter content may be encrypted with AES-GCM and requires decryption.
- * The site has aggressive rate limiting (~12 seconds between requests).
- *
- * IMPORTANT: AI translation requires authentication. Users must log in
- * via WebView to access AI translations beyond the free limit (~10 chapters).
+ * CLOUDFLARE PROTECTION:
+ * - This site uses Cloudflare Turnstile protection
+ * - Users MUST solve the challenge in WebView before reading
+ * - Cookies are valid for ~24 hours
+ * - Desktop User-Agent is used to avoid mobile challenges
  */
 class WtrLabProvider : MainProvider() {
 
@@ -36,11 +32,49 @@ class WtrLabProvider : MainProvider() {
     override val hasMainPage = true
     override val hasReviews = false
     override val iconRes: Int = R.drawable.ic_provider_wtrlab
-    override val rateLimitTime: Long = 12000L
+    override val rateLimitTime: Long = 3000L // Reduced from 12s
+    override val ratingScale: RatingScale = RatingScale.FIVE_STAR
 
     private val lang = "en"
     private var decryptionKey: String? = null
     private var cachedBuildId: String? = null
+
+    // Glossary terms cache
+    private data class GlossaryTerm(val from: String, val to: String)
+    private val userTermsCache = mutableMapOf<String, List<GlossaryTerm>>()
+    private val storyTermsCache = mutableMapOf<String, List<GlossaryTerm>>()
+
+    companion object {
+        private const val BATCH_SIZE = 250
+
+        // CRITICAL: Use desktop User-Agent to avoid mobile Cloudflare challenges
+        // Mobile UA triggers more aggressive challenges
+        const val DESKTOP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/120.0.0.0 Safari/537.36"
+
+        private object Endpoints {
+            const val API_CHAPTERS = "/api/chapters"
+            const val API_READER_GET = "/api/reader/get"
+            const val API_USER_CONFIG = "/api/v2/user/config"
+            const val API_READER_TERMS = "/api/v2/reader/terms"
+            const val NOVEL_FINDER = "/en/novel-finder"
+        }
+
+        private object Status {
+            const val ONGOING = 0
+            const val COMPLETED = 1
+            const val HIATUS = 2
+            const val DROPPED = 3
+        }
+
+        private object ErrorCodes {
+            const val CHAPTER_LOCKED = "CHAPTER_LOCKED"
+            const val TURNSTILE_REQUIRED = 1401
+            const val UNAUTHORIZED = 401
+            const val FORBIDDEN = 403
+        }
+    }
 
     // ================================================================
     // FILTER OPTIONS
@@ -49,20 +83,15 @@ class WtrLabProvider : MainProvider() {
     override val orderBys = listOf(
         FilterOption("Update Date", "update"),
         FilterOption("Addition Date", "date"),
-        FilterOption("Random", "random"),
         FilterOption("Weekly View", "weekly_rank"),
         FilterOption("Monthly View", "monthly_rank"),
         FilterOption("All-Time View", "view"),
-        FilterOption("Name", "name"),
-        FilterOption("Reader", "reader"),
         FilterOption("Chapter Count", "chapter"),
         FilterOption("Rating", "rating"),
-        FilterOption("Review Count", "total_rate"),
-        FilterOption("Vote Count", "vote")
+        FilterOption("Name", "name")
     )
 
     override val tags = listOf(
-        FilterOption("All", ""),
         FilterOption("Male Protagonist", "417"),
         FilterOption("Female Protagonist", "275"),
         FilterOption("Transmigration", "717"),
@@ -72,7 +101,6 @@ class WtrLabProvider : MainProvider() {
         FilterOption("Fantasy World", "265"),
         FilterOption("Overpowered Protagonist", "506"),
         FilterOption("Weak to Strong", "750"),
-        FilterOption("Harem-seeking Protagonist", "329"),
         FilterOption("Romance", "592"),
         FilterOption("Action", "1"),
         FilterOption("Adventure", "2"),
@@ -80,82 +108,115 @@ class WtrLabProvider : MainProvider() {
         FilterOption("Drama", "4"),
         FilterOption("Fantasy", "5"),
         FilterOption("Harem", "6"),
-        FilterOption("Horror", "7"),
         FilterOption("Martial Arts", "426"),
-        FilterOption("Mystery", "471"),
-        FilterOption("Psychological", "562"),
-        FilterOption("School Life", "684"),
         FilterOption("Sci-fi", "13"),
-        FilterOption("Seinen", "14"),
-        FilterOption("Shounen", "15"),
-        FilterOption("Slice of Life", "16"),
-        FilterOption("Supernatural", "17"),
-        FilterOption("Tragedy", "18"),
-        FilterOption("Wuxia", "19"),
         FilterOption("Xianxia", "20"),
         FilterOption("Xuanhuan", "21"),
         FilterOption("Game Elements", "297"),
         FilterOption("Kingdom Building", "379"),
         FilterOption("Time Travel", "710"),
         FilterOption("Apocalypse", "47"),
-        FilterOption("Survival", "692"),
-        FilterOption("Modern Day", "446"),
         FilterOption("Magic", "410"),
-        FilterOption("Fanfiction", "263"),
-        FilterOption("Naruto", "769"),
-        FilterOption("Marvel", "766"),
-        FilterOption("One Piece", "767"),
-        FilterOption("Harry Potter", "768"),
-        FilterOption("Pokemon", "771"),
-        FilterOption("Douluo Dalu", "772")
+        FilterOption("Fanfiction", "263")
     )
 
     // ================================================================
-    // COOKIE MANAGEMENT
+    // COOKIE & CLOUDFLARE MANAGEMENT
     // ================================================================
 
     /**
-     * Get cookies for wtr-lab.com from the system CookieManager
-     * These are set when user logs in via WebView
+     * Build headers with desktop User-Agent and Cloudflare cookies
      */
-    private fun getCookiesForDomain(): String? {
-        return try {
-            val cookieManager = CookieManager.getInstance()
-            cookieManager.getCookie(mainUrl)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
-
-    /**
-     * Check if user is likely authenticated based on cookies
-     */
-    private fun isAuthenticated(): Boolean {
-        val cookies = getCookiesForDomain() ?: return false
-        // WTR-LAB uses various auth cookies
-        return cookies.contains("token") ||
-                cookies.contains("session") ||
-                cookies.contains("user_id") ||
-                cookies.contains("auth") ||
-                cookies.contains("remember")
-    }
-
-    /**
-     * Build headers with cookies included
-     */
-    private fun buildHeadersWithCookies(
-        additionalHeaders: Map<String, String> = emptyMap()
+    private fun buildHeaders(
+        additionalHeaders: Map<String, String> = emptyMap(),
+        isApiRequest: Boolean = false
     ): Map<String, String> {
         val headers = mutableMapOf<String, String>()
-        headers.putAll(additionalHeaders)
 
-        // Add cookies if available
-        getCookiesForDomain()?.let { cookies ->
+        // CRITICAL: Always use desktop User-Agent
+        headers["User-Agent"] = DESKTOP_USER_AGENT
+
+        // Get cookies from WebView CookieManager
+        val cookies = getCookiesFromWebView()
+        if (cookies.isNotBlank()) {
             headers["Cookie"] = cookies
         }
 
+        // Standard browser headers
+        if (isApiRequest) {
+            headers["Accept"] = "application/json, text/plain, */*"
+            headers["Accept-Language"] = "en-US,en;q=0.9"
+        } else {
+            headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+            headers["Accept-Language"] = "en-US,en;q=0.9"
+        }
+
+        headers["Accept-Encoding"] = "gzip, deflate, br"
+        headers["Connection"] = "keep-alive"
+        headers["Upgrade-Insecure-Requests"] = "1"
+        headers["Sec-Fetch-Dest"] = "document"
+        headers["Sec-Fetch-Mode"] = "navigate"
+        headers["Sec-Fetch-Site"] = "none"
+        headers["Cache-Control"] = "max-age=0"
+
+        // Add custom headers (can override defaults)
+        headers.putAll(additionalHeaders)
+
         return headers
+    }
+
+    /**
+     * Get cookies from WebView CookieManager for wtr-lab.com
+     */
+    private fun getCookiesFromWebView(): String {
+        return try {
+            val cookieManager = CookieManager.getInstance()
+            val cookies = cookieManager.getCookie(mainUrl) ?: ""
+
+            android.util.Log.d("WtrLabProvider", "WebView cookies: ${cookies.take(100)}...")
+            android.util.Log.d("WtrLabProvider", "Has cf_clearance: ${cookies.contains("cf_clearance")}")
+
+            cookies
+        } catch (e: Exception) {
+            android.util.Log.e("WtrLabProvider", "Failed to get WebView cookies", e)
+            ""
+        }
+    }
+
+    /**
+     * Check if user has valid Cloudflare cookies
+     */
+    private fun hasCloudflareCookies(): Boolean {
+        val cookies = getCookiesFromWebView()
+        val hasCfClearance = cookies.contains("cf_clearance")
+
+        android.util.Log.d("WtrLabProvider", "hasCloudflareCookies: $hasCfClearance")
+        return hasCfClearance
+    }
+
+    /**
+     * Check if response is Cloudflare challenge
+     */
+    private fun isCloudflareChallenge(html: String, statusCode: Int): Boolean {
+        val cfMarkers = listOf(
+            "cf-browser-verification",
+            "cf_chl_opt",
+            "challenge-platform",
+            "Checking your browser",
+            "Just a moment",
+            "Verify you are human",
+            "cf-turnstile",
+            "challenges.cloudflare.com"
+        )
+
+        val isChallenge = (statusCode == 403 || statusCode == 503) &&
+                cfMarkers.any { html.contains(it, ignoreCase = true) }
+
+        if (isChallenge) {
+            android.util.Log.w("WtrLabProvider", "Cloudflare challenge detected (code: $statusCode)")
+        }
+
+        return isChallenge
     }
 
     // ================================================================
@@ -178,20 +239,45 @@ class WtrLabProvider : MainProvider() {
 
     private fun parseStatus(status: Int?): String? {
         return when (status) {
-            0 -> "Ongoing"
-            1 -> "Completed"
-            2 -> "Hiatus"
-            3 -> "Dropped"
+            Status.ONGOING -> "Ongoing"
+            Status.COMPLETED -> "Completed"
+            Status.HIATUS -> "Hiatus"
+            Status.DROPPED -> "Dropped"
             else -> null
         }
     }
 
-    /**
-     * Extract decryption key from site's JavaScript files
-     * The key changes periodically, so we need to extract it dynamically
-     */
+    private suspend fun getBuildId(): String {
+        cachedBuildId?.let { return it }
+
+        try {
+            val response = get("$mainUrl${Endpoints.NOVEL_FINDER}", buildHeaders())
+
+            // Check for Cloudflare
+            if (response.code == 403 || response.code == 503) {
+                if (isCloudflareChallenge(response.text, response.code)) {
+                    throw CloudflareException()
+                }
+            }
+
+            val nextData = extractNextData(response.document)
+            val buildId = nextData?.let { extractBuildId(it) }
+                ?: throw Exception("Could not extract buildId from page")
+
+            cachedBuildId = buildId
+            return buildId
+        } catch (e: CloudflareException) {
+            throw e
+        } catch (e: Exception) {
+            throw Exception("Failed to get buildId: ${e.message}")
+        }
+    }
+
+    // ================================================================
+    // DECRYPTION
+    // ================================================================
+
     private suspend fun getDecryptionKey(document: Document): String {
-        // Return cached key if available
         decryptionKey?.let { return it }
 
         try {
@@ -202,7 +288,6 @@ class WtrLabProvider : MainProvider() {
                 val src = script.attr("src")
                 if (src.isBlank()) continue
 
-                // Build full URL
                 val scriptUrl = when {
                     src.startsWith("http") -> src
                     src.startsWith("//") -> "https:$src"
@@ -211,7 +296,7 @@ class WtrLabProvider : MainProvider() {
                 }
 
                 try {
-                    val scriptContent = get(scriptUrl, buildHeadersWithCookies()).text
+                    val scriptContent = get(scriptUrl, buildHeaders()).text
 
                     val keyIndex = scriptContent.indexOf(searchPattern)
                     if (keyIndex >= 0) {
@@ -223,7 +308,6 @@ class WtrLabProvider : MainProvider() {
                         }
                     }
                 } catch (e: Exception) {
-                    // Continue to next script
                     continue
                 }
             }
@@ -231,14 +315,10 @@ class WtrLabProvider : MainProvider() {
             e.printStackTrace()
         }
 
-        // Fallback to known key (may be outdated)
+        // Fallback key
         return "IJAFUUxjM25hyzL2AZrn0wl7cESED6Ru"
     }
 
-    /**
-     * Decrypt AES-GCM encrypted content
-     * Format: [arr:|str:]base64(iv):base64(shortCipher):base64(longCipher)
-     */
     private fun decryptContent(encryptedText: String, key: String): List<String> {
         if (encryptedText.isBlank()) return emptyList()
 
@@ -257,7 +337,6 @@ class WtrLabProvider : MainProvider() {
 
         val parts = rawText.split(":")
         if (parts.size != 3) {
-            // Not encrypted or invalid format - return as-is
             return listOf(encryptedText)
         }
 
@@ -266,7 +345,6 @@ class WtrLabProvider : MainProvider() {
             val shortCipher = Base64.getDecoder().decode(parts[1])
             val longCipher = Base64.getDecoder().decode(parts[2])
 
-            // Combine: longCipher + shortCipher
             val cipherBytes = ByteArray(longCipher.size + shortCipher.size)
             System.arraycopy(longCipher, 0, cipherBytes, 0, longCipher.size)
             System.arraycopy(shortCipher, 0, cipherBytes, longCipher.size, shortCipher.size)
@@ -289,27 +367,147 @@ class WtrLabProvider : MainProvider() {
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            // Return original text if decryption fails
             listOf(encryptedText)
         }
     }
 
-    /**
-     * Apply glossary term replacements to text
-     * Terms are marked as ※N⛬ or ※N〓 where N is the index
-     */
-    private fun applyGlossary(text: String, glossaryTerms: Map<Int, String>): String {
-        var result = text
-        for ((index, replacement) in glossaryTerms) {
-            result = result.replace("※${index}⛬", replacement)
-            result = result.replace("※${index}〓", replacement)
+    // ================================================================
+    // GLOSSARY METHODS (keeping your original implementations)
+    // ================================================================
+
+    private suspend fun getUserTerms(serieId: String): List<GlossaryTerm> {
+        userTermsCache[serieId]?.let { return it }
+
+        return try {
+            val response = get("$mainUrl${Endpoints.API_USER_CONFIG}", buildHeaders(isApiRequest = true))
+
+            val json = JSONObject(response.text)
+            val config = json.optJSONObject("config")
+            val termsArray = config?.optJSONArray("terms")
+
+            val terms = mutableListOf<GlossaryTerm>()
+
+            if (termsArray != null) {
+                for (i in 0 until termsArray.length()) {
+                    val termArray = termsArray.optJSONArray(i) ?: continue
+
+                    val applicableSeries = termArray.optJSONArray(4)
+                    val appliesToThisSerie = applicableSeries == null ||
+                            (0 until applicableSeries.length()).any {
+                                applicableSeries.optString(it) == serieId
+                            }
+
+                    if (!appliesToThisSerie) continue
+
+                    val to = termArray.optString(1, null)?.takeIf { it.isNotBlank() } ?: continue
+                    val fromString = termArray.optString(2, null)?.takeIf { it.isNotBlank() } ?: continue
+
+                    val fromList = fromString.split("|").filter { it.isNotBlank() }
+
+                    fromList.forEach { from ->
+                        terms.add(GlossaryTerm(from = from, to = to))
+                    }
+                }
+            }
+
+            userTermsCache[serieId] = terms
+            terms
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
         }
+    }
+
+    private suspend fun getStoryTerms(rawId: String): List<GlossaryTerm> {
+        storyTermsCache[rawId]?.let { return it }
+
+        return try {
+            val response = get(
+                "$mainUrl${Endpoints.API_READER_TERMS}/$rawId.json",
+                buildHeaders(isApiRequest = true)
+            )
+
+            val json = JSONObject(response.text)
+            val glossaries = json.optJSONArray("glossaries")
+
+            val termsMap = mutableMapOf<String, String>()
+
+            if (glossaries != null) {
+                for (i in 0 until glossaries.length()) {
+                    val glossary = glossaries.optJSONObject(i) ?: continue
+                    val data = glossary.optJSONObject("data") ?: continue
+                    val termsArray = data.optJSONArray("terms") ?: continue
+
+                    for (j in 0 until termsArray.length()) {
+                        val term = termsArray.optJSONArray(j) ?: continue
+                        if (term.length() < 2) continue
+
+                        val toArray = term.optJSONArray(0)
+                        val from = term.optString(1, null)?.takeIf { it.isNotBlank() } ?: continue
+                        val to = toArray?.optString(0, null)?.takeIf { it.isNotBlank() } ?: continue
+
+                        termsMap[from] = to
+                    }
+                }
+            }
+
+            val terms = termsMap.map { GlossaryTerm(from = it.key, to = it.value) }
+            storyTermsCache[rawId] = terms
+            terms
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    private fun applyGlossaryTerms(
+        text: String,
+        chapterTerms: Map<String, String>,
+        storyTerms: List<GlossaryTerm>,
+        userTerms: List<GlossaryTerm>
+    ): String {
+        var result = text
+
+        for ((marker, chapterReplacement) in chapterTerms) {
+            var finalReplacement = chapterReplacement
+
+            storyTerms.find { it.from == chapterReplacement }?.let {
+                finalReplacement = it.to
+            }
+
+            userTerms.find { it.from == chapterReplacement }?.let {
+                finalReplacement = it.to
+            }
+
+            result = result.replace(marker, finalReplacement)
+        }
+
+        for (term in userTerms) {
+            result = result.replace(term.from, term.to)
+        }
+
         return result
     }
 
-    /**
-     * Parse novel from JSON object (search/list results)
-     */
+    private fun applyPatches(text: String, patches: JSONArray?): String {
+        if (patches == null) return text
+
+        var result = text
+        for (i in 0 until patches.length()) {
+            val patch = patches.optJSONObject(i) ?: continue
+            val zh = patch.optString("zh", null)?.takeIf { it.isNotBlank() } ?: continue
+            val en = patch.optString("en", null)?.takeIf { it.isNotBlank() } ?: continue
+
+            result = result.replace(zh, " $en")
+        }
+
+        return result
+    }
+
+    // ================================================================
+    // NOVEL PARSING
+    // ================================================================
+
     private fun parseNovelFromJson(seriesObj: JSONObject): Novel? {
         val rawId = seriesObj.optLong("raw_id", 0)
         if (rawId == 0L) return null
@@ -339,21 +537,6 @@ class WtrLabProvider : MainProvider() {
         )
     }
 
-    /**
-     * Get or refresh the buildId needed for _next/data API calls
-     */
-    private suspend fun getBuildId(): String {
-        cachedBuildId?.let { return it }
-
-        val response = get("$mainUrl/$lang/novel-finder", buildHeadersWithCookies())
-        val nextData = extractNextData(response.document)
-        val buildId = nextData?.let { extractBuildId(it) }
-            ?: throw Exception("Could not extract buildId from page")
-
-        cachedBuildId = buildId
-        return buildId
-    }
-
     // ================================================================
     // MAIN PAGE
     // ================================================================
@@ -363,28 +546,38 @@ class WtrLabProvider : MainProvider() {
         orderBy: String?,
         tag: String?
     ): MainPageResult {
-        val order = orderBy.takeUnless { it.isNullOrEmpty() } ?: "update"
+        // Check for Cloudflare cookies first
+        if (!hasCloudflareCookies()) {
+            throw CloudflareException()
+        }
+
         val buildId = getBuildId()
 
-        val params = mutableListOf<String>()
-        params.add("orderBy=$order")
-        params.add("order=desc")
-        params.add("status=all")
-        params.add("release_status=all")
-        params.add("addition_age=all")
-        params.add("page=$page")
+        val params = buildList {
+            add("orderBy=${orderBy ?: "update"}")
+            add("order=desc")
+            add("status=all")
+            add("release_status=all")
+            add("addition_age=all")
+            add("page=$page")
 
-        if (!tag.isNullOrEmpty()) {
-            params.add("gi=$tag")
-            params.add("gc=or")
+            if (!tag.isNullOrEmpty()) {
+                add("gi=$tag")
+                add("gc=or")
+            }
         }
 
         val queryString = params.joinToString("&")
         val url = "$mainUrl/_next/data/$buildId/$lang/novel-finder.json?$queryString"
 
-        val response = get(url, buildHeadersWithCookies(
-            mapOf("Accept" to "application/json, text/plain, */*")
-        ))
+        val response = get(url, buildHeaders(isApiRequest = true))
+
+        // Check for Cloudflare
+        if (response.code == 403 || response.code == 503) {
+            if (isCloudflareChallenge(response.text, response.code)) {
+                throw CloudflareException()
+            }
+        }
 
         val json = JSONObject(response.text)
         val pageProps = json.optJSONObject("pageProps")
@@ -413,13 +606,21 @@ class WtrLabProvider : MainProvider() {
     // ================================================================
 
     override suspend fun search(query: String): List<Novel> {
+        if (!hasCloudflareCookies()) {
+            throw CloudflareException()
+        }
+
         val buildId = getBuildId()
         val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
         val url = "$mainUrl/_next/data/$buildId/$lang/novel-finder.json?text=$encodedQuery"
 
-        val response = get(url, buildHeadersWithCookies(
-            mapOf("Accept" to "application/json, text/plain, */*")
-        ))
+        val response = get(url, buildHeaders(isApiRequest = true))
+
+        if (response.code == 403 || response.code == 503) {
+            if (isCloudflareChallenge(response.text, response.code)) {
+                throw CloudflareException()
+            }
+        }
 
         val json = JSONObject(response.text)
         val pageProps = json.optJSONObject("pageProps") ?: return emptyList()
@@ -445,11 +646,21 @@ class WtrLabProvider : MainProvider() {
     // ================================================================
 
     override suspend fun load(url: String): NovelDetails? {
+        if (!hasCloudflareCookies()) {
+            throw CloudflareException()
+        }
+
         val fullUrl = if (url.startsWith("http")) url else "$mainUrl$url"
 
-        val response = get(fullUrl, buildHeadersWithCookies())
-        val document = response.document
+        val response = get(fullUrl, buildHeaders())
 
+        if (response.code == 403 || response.code == 503) {
+            if (isCloudflareChallenge(response.text, response.code)) {
+                throw CloudflareException()
+            }
+        }
+
+        val document = response.document
         val nextData = extractNextData(document) ?: return null
         val props = nextData.optJSONObject("props") ?: return null
         val pageProps = props.optJSONObject("pageProps") ?: return null
@@ -463,13 +674,11 @@ class WtrLabProvider : MainProvider() {
         val data = serieData.optJSONObject("data")
 
         val title = data?.optString("title")?.takeIf { it.isNotBlank() }
-            ?: document.selectFirstOrNull("h1.text-uppercase")?.textOrNull()?.trim()
-            ?: document.selectFirstOrNull("h1.long-title")?.textOrNull()?.trim()
             ?: return null
 
-        val author = data?.optString("author")?.takeIf { it.isNotBlank() }
-        val description = data?.optString("description")?.takeIf { it.isNotBlank() }
-        val image = data?.optString("image")?.takeIf { it.isNotBlank() }
+        val author = data.optString("author")?.takeIf { it.isNotBlank() }
+        val description = data.optString("description")?.takeIf { it.isNotBlank() }
+        val image = data.optString("image")?.takeIf { it.isNotBlank() }
 
         val status = parseStatus(serieData.optInt("status", -1))
         val rawChapterCount = serieData.optLong("raw_chapter_count", 0)
@@ -505,18 +714,6 @@ class WtrLabProvider : MainProvider() {
             emptyList()
         }
 
-        val otherSeries = serie.optJSONArray("other_series")
-        val otherNovels = if (otherSeries != null) {
-            (0 until otherSeries.length()).mapNotNull { i ->
-                val seriesObj = otherSeries.getJSONObject(i)
-                parseNovelFromJson(seriesObj)
-            }
-        } else {
-            emptyList()
-        }
-
-        val allRelated = (relatedNovels + otherNovels).distinctBy { it.url }
-
         return NovelDetails(
             url = fullUrl,
             name = title,
@@ -529,13 +726,10 @@ class WtrLabProvider : MainProvider() {
             peopleVoted = peopleVoted,
             status = status,
             views = views,
-            relatedNovels = allRelated.ifEmpty { null }
+            relatedNovels = relatedNovels.ifEmpty { null }
         )
     }
 
-    /**
-     * Load chapters from API in batches
-     */
     private suspend fun loadChapters(
         rawId: Long,
         totalChapters: Long,
@@ -544,17 +738,14 @@ class WtrLabProvider : MainProvider() {
         if (totalChapters <= 0) return emptyList()
 
         val chapters = mutableListOf<Chapter>()
-        val batchSize = 250
         var start = 1L
 
         while (start <= totalChapters) {
-            val end = minOf(start + batchSize - 1, totalChapters)
+            val end = minOf(start + BATCH_SIZE - 1, totalChapters)
 
             try {
-                val url = "$mainUrl/api/chapters/$rawId?start=$start&end=$end"
-                val response = get(url, buildHeadersWithCookies(
-                    mapOf("Accept" to "application/json")
-                ))
+                val url = "$mainUrl${Endpoints.API_CHAPTERS}/$rawId?start=$start&end=$end"
+                val response = get(url, buildHeaders(isApiRequest = true))
 
                 val json = JSONObject(response.text)
                 val chaptersArray = json.optJSONArray("chapters")
@@ -568,7 +759,7 @@ class WtrLabProvider : MainProvider() {
                     val updatedAt = chapterObj.optString("updated_at", null)
 
                     val chapterName = if (title.isNotBlank()) {
-                        "#$order $title"
+                        "#$order: $title"
                     } else {
                         "Chapter $order"
                     }
@@ -584,8 +775,8 @@ class WtrLabProvider : MainProvider() {
                     )
                 }
 
-                if (chaptersArray.length() < batchSize) break
-                start += batchSize
+                if (chaptersArray.length() < BATCH_SIZE) break
+                start += BATCH_SIZE
 
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -604,9 +795,12 @@ class WtrLabProvider : MainProvider() {
     // ================================================================
 
     override suspend fun loadChapterContent(url: String): String? {
+        if (!hasCloudflareCookies()) {
+            return buildCloudflareErrorHtml()
+        }
+
         val fullUrl = if (url.startsWith("http")) url else "$mainUrl$url"
 
-        // Extract rawId and chapterNo from URL
         val regex = Regex("/serie-(\\d+)/[^/]+/chapter-(\\d+)")
         val match = regex.find(fullUrl)
             ?: throw Exception("Invalid chapter URL format: $fullUrl")
@@ -614,26 +808,17 @@ class WtrLabProvider : MainProvider() {
         val rawId = match.groupValues[1]
         val chapterNo = match.groupValues[2]
 
-        // Check authentication status
-        val hasAuth = isAuthenticated()
+        val userTerms = getUserTerms(rawId)
+        val storyTerms = getStoryTerms(rawId)
 
-        // Translation services to try:
-        // - "ai" requires authentication for unlimited access
-        // - "web" is the fallback (machine translation)
-        val services = if (hasAuth) {
-            listOf("ai", "web")
-        } else {
-            // Without auth, AI may fail after ~10 chapters
-            listOf("web", "ai")
-        }
-
+        // Try AI translation first, then web
+        val services = listOf("ai", "web")
         var lastError: String? = null
         var pageDocument: Document? = null
         var usedService: String? = null
 
         for (service in services) {
             try {
-                // Build JSON body
                 val jsonBody = JSONObject().apply {
                     put("translate", service)
                     put("language", lang)
@@ -643,44 +828,46 @@ class WtrLabProvider : MainProvider() {
                     put("force_retry", false)
                 }
 
-                // Make request with cookies and JSON content type
                 val response = postJson(
-                    url = "$mainUrl/api/reader/get",
+                    url = "$mainUrl${Endpoints.API_READER_GET}",
                     json = jsonBody.toString(),
-                    headers = buildHeadersWithCookies(
-                        mapOf(
-                            "Accept" to "application/json",
+                    headers = buildHeaders(
+                        additionalHeaders = mapOf(
                             "Referer" to fullUrl,
                             "Origin" to mainUrl
-                        )
+                        ),
+                        isApiRequest = true
                     )
                 )
 
-                val json = JSONObject(response.text)
-
-                // Check for Turnstile (Cloudflare challenge)
-                if (json.optBoolean("requireTurnstile", false) ||
-                    json.optInt("code", 0) == 1401) {
-                    throw Exception("Cloudflare verification required. Please open in WebView.")
+                // Check for Cloudflare
+                if (response.code == 403 || response.code == 503) {
+                    if (isCloudflareChallenge(response.text, response.code)) {
+                        return buildCloudflareErrorHtml()
+                    }
                 }
 
-                // Check for auth/limit errors
+                val json = JSONObject(response.text)
+
+                // Check for Turnstile
+                if (json.optBoolean("requireTurnstile", false) ||
+                    json.optInt("code", 0) == ErrorCodes.TURNSTILE_REQUIRED) {
+                    return buildCloudflareErrorHtml()
+                }
+
+                if (json.optString("code", null) == ErrorCodes.CHAPTER_LOCKED) {
+                    lastError = "Chapter is locked or not AI translated yet."
+                    continue
+                }
+
                 val code = json.optInt("code", 0)
-                if (code == 401 || code == 403) {
+                if (code == ErrorCodes.UNAUTHORIZED || code == ErrorCodes.FORBIDDEN) {
                     lastError = "Authentication required for AI translation."
                     continue
                 }
 
-                // Check for success
                 if (!json.optBoolean("success", true)) {
                     val message = json.optString("message", "Unknown error")
-                    if (message.contains("limit", ignoreCase = true) ||
-                        message.contains("auth", ignoreCase = true) ||
-                        message.contains("login", ignoreCase = true) ||
-                        message.contains("quota", ignoreCase = true)) {
-                        lastError = message
-                        continue
-                    }
                     lastError = message
                     continue
                 }
@@ -697,21 +884,17 @@ class WtrLabProvider : MainProvider() {
                     continue
                 }
 
-                // Success! Mark which service worked
                 usedService = service
 
-                // Parse body content (may be encrypted)
                 val paragraphs: List<String> = when (bodyContent) {
                     is String -> {
                         if (bodyContent.startsWith("arr:") || bodyContent.startsWith("str:")) {
-                            // Encrypted content - need decryption key
                             if (pageDocument == null) {
-                                pageDocument = get(fullUrl, buildHeadersWithCookies()).document
+                                pageDocument = get(fullUrl, buildHeaders()).document
                             }
                             val key = getDecryptionKey(pageDocument!!)
                             decryptContent(bodyContent, key)
                         } else {
-                            // Plain text
                             listOf(bodyContent)
                         }
                     }
@@ -724,76 +907,34 @@ class WtrLabProvider : MainProvider() {
                     }
                 }
 
-                // Parse glossary terms for replacement
+                val chapterTerms = mutableMapOf<String, String>()
                 val glossaryData = dataObj.optJSONObject("glossary_data")
                 val termsArray = glossaryData?.optJSONArray("terms")
-                val glossaryTerms = mutableMapOf<Int, String>()
 
                 if (termsArray != null) {
                     for (i in 0 until termsArray.length()) {
                         val term = termsArray.optJSONArray(i) ?: continue
-                        val replacement = term.optString(0, null)
-                        if (!replacement.isNullOrBlank()) {
-                            glossaryTerms[i] = replacement
+                        val replacement = term.optString(0, null)?.takeIf { it.isNotBlank() }
+                        if (replacement != null) {
+                            chapterTerms["※${i}⛬"] = replacement
+                            chapterTerms["※${i}〓"] = replacement
                         }
                     }
                 }
 
-                // Build HTML content
-                val contentBuilder = StringBuilder()
-
-                // Add chapter title
-                val chapterObj = json.optJSONObject("chapter")
-                val chapterTitle = chapterObj?.optString("title")
-                if (!chapterTitle.isNullOrBlank()) {
-                    contentBuilder.append("<h1>#$chapterNo $chapterTitle</h1>\n")
-                }
-
-                // Add translation service indicator if using web translation without auth
-                if (usedService == "web" && !hasAuth) {
-                    contentBuilder.append(
-                        "<div style=\"background: #fff3cd; padding: 12px; margin-bottom: 16px; " +
-                                "border-radius: 8px; border-left: 4px solid #ffc107;\">" +
-                                "<strong>⚠️ Web Translation</strong><br/>" +
-                                "<span style=\"font-size: 0.9em;\">Log in via WebView for better AI translation.</span>" +
-                                "</div>\n"
-                    )
-                }
-
-                // Process paragraphs
-                val imagesArray = dataObj.optJSONArray("images")
-                var imageIndex = 0
                 val patchArray = dataObj.optJSONArray("patch")
 
-                for (paragraph in paragraphs) {
-                    if (paragraph == "[image]") {
-                        // Insert image
-                        val imageUrl = imagesArray?.optString(imageIndex)
-                        if (!imageUrl.isNullOrBlank()) {
-                            contentBuilder.append("<p><img src=\"$imageUrl\" style=\"max-width: 100%;\" /></p>\n")
-                        }
-                        imageIndex++
-                    } else {
-                        // Apply glossary replacements
-                        var processedText = applyGlossary(paragraph, glossaryTerms)
-
-                        // Apply patches if available (zh -> en replacements)
-                        if (patchArray != null) {
-                            for (i in 0 until patchArray.length()) {
-                                val patch = patchArray.optJSONObject(i) ?: continue
-                                val zh = patch.optString("zh", "")
-                                val en = patch.optString("en", "")
-                                if (zh.isNotBlank() && en.isNotBlank()) {
-                                    processedText = processedText.replace(zh, " $en")
-                                }
-                            }
-                        }
-
-                        contentBuilder.append("<p>$processedText</p>\n")
-                    }
-                }
-
-                return contentBuilder.toString()
+                return buildChapterHtml(
+                    chapterNo = chapterNo,
+                    chapterTitle = json.optJSONObject("chapter")?.optString("title"),
+                    paragraphs = paragraphs,
+                    images = dataObj.optJSONArray("images"),
+                    chapterTerms = chapterTerms,
+                    storyTerms = storyTerms,
+                    userTerms = userTerms,
+                    patches = patchArray,
+                    usedService = usedService
+                )
 
             } catch (e: Exception) {
                 lastError = e.message ?: "Unknown error"
@@ -802,27 +943,106 @@ class WtrLabProvider : MainProvider() {
             }
         }
 
-        // All services failed - provide helpful error message as HTML
-        val errorMessage = buildString {
-            append("<div style=\"padding: 20px; text-align: center;\">")
-            append("<h2>❌ Failed to load chapter</h2>")
-            append("<p style=\"color: #666;\">$lastError</p>")
+        return buildErrorHtml(lastError)
+    }
 
-            if (!hasAuth) {
-                append("<hr style=\"margin: 20px 0;\"/>")
-                append("<h3>💡 Tip: Log in for unlimited access</h3>")
-                append("<p>WTR-LAB limits AI translations for guests (~10 chapters).</p>")
-                append("<p><strong>To unlock all chapters:</strong></p>")
-                append("<ol style=\"text-align: left; display: inline-block;\">")
-                append("<li>Open WTR-LAB in WebView (tap globe icon)</li>")
-                append("<li>Log in or create an account</li>")
-                append("<li>Return to reading</li>")
-                append("</ol>")
-            }
+    private fun buildChapterHtml(
+        chapterNo: String,
+        chapterTitle: String?,
+        paragraphs: List<String>,
+        images: JSONArray?,
+        chapterTerms: Map<String, String>,
+        storyTerms: List<GlossaryTerm>,
+        userTerms: List<GlossaryTerm>,
+        patches: JSONArray?,
+        usedService: String?
+    ): String {
+        val html = StringBuilder()
 
-            append("</div>")
+        if (!chapterTitle.isNullOrBlank()) {
+            html.append("<h1>#$chapterNo: $chapterTitle</h1>\n")
         }
 
-        return errorMessage
+        if (usedService == "web") {
+            html.append("""
+                <div style="background: #fff3cd; padding: 12px; margin-bottom: 16px; 
+                    border-radius: 8px; border-left: 4px solid #ffc107;">
+                    <strong>⚠️ Web Translation (Machine Translation)</strong><br/>
+                    <span style="font-size: 0.9em;">
+                        This is basic machine translation. AI translation may be unavailable.
+                    </span>
+                </div>
+            """.trimIndent())
+        }
+
+        var imageIndex = 0
+
+        for (paragraph in paragraphs) {
+            if (paragraph == "[image]") {
+                val imageUrl = images?.optString(imageIndex)
+                if (!imageUrl.isNullOrBlank()) {
+                    html.append("""
+                        <p><img src="$imageUrl" style="max-width: 100%; height: auto;" /></p>
+                    """.trimIndent())
+                }
+                imageIndex++
+            } else {
+                var processedText = applyGlossaryTerms(
+                    text = paragraph,
+                    chapterTerms = chapterTerms,
+                    storyTerms = storyTerms,
+                    userTerms = userTerms
+                )
+
+                processedText = applyPatches(processedText, patches)
+
+                html.append("<p>$processedText</p>\n")
+            }
+        }
+
+        return html.toString()
     }
+
+    private fun buildErrorHtml(errorMessage: String?): String {
+        return buildString {
+            append("<div style=\"padding: 20px; text-align: center;\">")
+            append("<h2>❌ Failed to load chapter</h2>")
+            append("<p style=\"color: #666; margin: 16px 0;\">")
+            append(errorMessage ?: "Unknown error occurred")
+            append("</p>")
+            append("<p style=\"font-size: 0.9em; color: #888;\">")
+            append("This chapter may not be translated yet or the server is under heavy load.")
+            append("</p>")
+            append("</div>")
+        }
+    }
+
+    private fun buildCloudflareErrorHtml(): String {
+        return buildString {
+            append("<div style=\"padding: 20px; text-align: center;\">")
+            append("<h2>🔒 Cloudflare Protection Active</h2>")
+            append("<p style=\"margin: 16px 0; line-height: 1.6;\">")
+            append("WTR-LAB uses Cloudflare to protect against bots.<br/>")
+            append("You need to solve the verification challenge first.")
+            append("</p>")
+            append("<hr style=\"margin: 20px 0; border: none; border-top: 1px solid #ddd;\"/>")
+            append("<h3>📱 How to unlock:</h3>")
+            append("<ol style=\"text-align: left; display: inline-block; margin: 16px 0; line-height: 1.8;\">")
+            append("<li>Tap the <strong>globe icon</strong> (🌐) at the top-right</li>")
+            append("<li>Wait for the Cloudflare challenge to appear</li>")
+            append("<li>Check the \"I'm human\" box if prompted</li>")
+            append("<li>Wait for the challenge to complete</li>")
+            append("<li>Close the browser and return to reading</li>")
+            append("</ol>")
+            append("<div style=\"background: #e3f2fd; padding: 12px; border-radius: 8px; margin: 16px 0;\">")
+            append("<strong>💡 Tip:</strong> Cookies last for 24 hours, so you won't need to do this often!")
+            append("</div>")
+            append("</div>")
+        }
+    }
+
+    /**
+     * Custom exception for Cloudflare challenges
+     */
+    class CloudflareException : Exception("Cloudflare verification required. Please open in WebView.")
 }

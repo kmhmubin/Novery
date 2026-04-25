@@ -51,6 +51,7 @@ import com.emptycastle.novery.domain.model.Novel
 import com.emptycastle.novery.domain.model.NovelDetails
 import com.emptycastle.novery.domain.model.UserReview
 import com.emptycastle.novery.epub.EpubExportOptions
+import com.emptycastle.novery.recommendation.TagNormalizer
 import com.emptycastle.novery.service.DownloadServiceManager
 import com.emptycastle.novery.service.DownloadState
 import com.emptycastle.novery.ui.components.FullScreenLoading
@@ -99,6 +100,7 @@ fun DetailsScreen(
     onNovelClick: (String, String) -> Unit = { _, _ -> },
     onOpenInWebView: (String, String) -> Unit = { _, _ -> },
     onNavigateToDownloads: () -> Unit = {},
+    onNavigateToTagExplorer: (TagNormalizer.TagCategory) -> Unit = {},
     viewModel: DetailsViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -255,6 +257,7 @@ fun DetailsScreen(
                                         onNovelClick = onNovelClick,
                                         onOpenInWebView = onOpenInWebView,
                                         onNavigateToDownloads = onNavigateToDownloads,
+                                        onNavigateToTagExplorer = onNavigateToTagExplorer, // ADD THIS LINE
                                         onExportEpub = {
                                             if (viewModel.hasDownloadedChapters()) {
                                                 epubFilePicker.launch(viewModel.generateEpubFileName())
@@ -290,6 +293,7 @@ fun DetailsScreen(
                                     onNovelClick = onNovelClick,
                                     onOpenInWebView = onOpenInWebView,
                                     onNavigateToDownloads = onNavigateToDownloads,
+                                    onNavigateToTagExplorer = onNavigateToTagExplorer,
                                     onExportEpub = {
                                         if (viewModel.hasDownloadedChapters()) {
                                             epubFilePicker.launch(viewModel.generateEpubFileName())
@@ -512,6 +516,7 @@ private fun DetailsContent(
     onExportEpub: () -> Unit,
     onHapticFeedback: (HapticFeedbackType) -> Unit,
     onTabSelected: (DetailsTab) -> Unit,
+    onNavigateToTagExplorer: (TagNormalizer.TagCategory) -> Unit = {},
     viewModel: DetailsViewModel,
     scope: CoroutineScope
 ) {
@@ -600,7 +605,17 @@ private fun DetailsContent(
         // Tags
         if (!details.tags.isNullOrEmpty()) {
             item(key = "tags") {
-                TagsRow(tags = details.tags)
+                TagsRow(
+                    tags = details.tags,
+                    onTagClick = { tagName ->
+                        // Convert tag string to TagCategory
+                        val tagCategory = com.emptycastle.novery.recommendation.TagNormalizer.normalize(tagName)
+                        if (tagCategory != null) {
+                            // Navigate to tag explorer
+                            onNavigateToTagExplorer(tagCategory)
+                        }
+                    }
+                )
             }
         }
 

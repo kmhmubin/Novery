@@ -1,5 +1,6 @@
 package com.emptycastle.novery.data.backup
 
+import com.emptycastle.novery.domain.model.LibraryFilter
 import kotlinx.serialization.Serializable
 
 /**
@@ -129,6 +130,8 @@ data class AppSettingsBackup(
     val ratingFormat: String = "TEN_POINT",
     val defaultLibrarySort: String = "LAST_READ",
     val defaultLibraryFilter: String = "DOWNLOADED",
+    val hideSpicyLibraryContent: Boolean = true,
+    val enabledLibraryFilters: List<String> = LibraryFilter.defaultEnabledShelves().map { it.name },
     val autoDownloadEnabled: Boolean = false,
     val autoDownloadOnWifiOnly: Boolean = true,
     val autoDownloadLimit: Int = 10,

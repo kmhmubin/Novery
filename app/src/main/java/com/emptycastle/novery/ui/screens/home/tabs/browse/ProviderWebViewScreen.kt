@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -128,6 +129,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import com.emptycastle.novery.data.remote.CloudflareManager
 import com.emptycastle.novery.provider.MainProvider
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -1318,16 +1320,25 @@ fun ProviderWebViewScreen(
 
     // Handle back
     val handleBack: () -> Unit = {
-        CloudflareManager.flushWebViewCookies()
-        val cookies = CloudflareManager.extractCookiesFromWebView(currentUrl)
-        if (cookies?.contains("cf_clearance") == true) {
-            CloudflareManager.saveCookiesForDomain(
-                domain = domain,
-                cookies = cookies,
-                userAgent = CloudflareManager.WEBVIEW_USER_AGENT
-            )
+        scope.launch {
+            // Final cookie extraction attempt before leaving
+            CloudflareManager.flushWebViewCookies()
+            delay(500) // Give time for flush
+
+            val cookies = CloudflareManager.extractCookiesFromWebView(currentUrl)
+            if (!cookies.isNullOrBlank() && cookies.contains("cf_clearance")) {
+                if (CloudflareManager.isValidCloudflareCookie(cookies)) {
+                    CloudflareManager.saveCookiesForDomain(
+                        domain = domain,
+                        cookies = cookies,
+                        userAgent = CloudflareManager.WEBVIEW_USER_AGENT
+                    )
+                    android.util.Log.d("CookieSave", "✓ Saved cookies on exit")
+                }
+            }
+
+            onBack()
         }
-        onBack()
     }
 
     // Handle URL submission
@@ -1426,11 +1437,17 @@ fun ProviderWebViewScreen(
             EnhancedProviderWebView(
                 startUrl = startUrl,
                 userAgent = CloudflareManager.WEBVIEW_USER_AGENT,
-                onWebViewCreated = { webView = it },
+                onWebViewCreated = { wv ->
+                    webView = wv
+
+                    //Inject existing cookies immediately
+                    CloudflareManager.injectCookiesIntoWebView(startUrl)
+                },
                 onPageStarted = { url ->
                     isLoading = true
                     loadingProgress = 0
                     currentUrl = url
+                    canGoBack = webView?.canGoBack() ?: false
                 },
                 onPageFinished = { url ->
                     isLoading = false
@@ -1438,11 +1455,12 @@ fun ProviderWebViewScreen(
                     currentUrl = url
                     canGoBack = webView?.canGoBack() ?: false
 
-                    CloudflareManager.flushWebViewCookies()
-
+                    // Don't flush immediately, let webChromeClient handle it
+                    // Pass scope to checkAndSaveCookies
                     checkAndSaveCookies(
                         url = url,
                         domain = domain,
+                        scope = scope, // ← ADD THIS
                         onCookiesSaved = {
                             cookieStatus = CookieDisplayStatus.VALID
                             showCookieSavedMessage = true
@@ -2841,6 +2859,18 @@ private fun EnhancedOpenInAppButton(
     }
 }
 
+/**
+ * Check if URL is an image request
+ */
+private fun isImageRequest(url: String): Boolean {
+    val urlLower = url.lowercase()
+    return urlLower.matches(Regex(".*\\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)(\\?.*)?$")) ||
+            urlLower.contains("/image/") ||
+            urlLower.contains("/img/") ||
+            urlLower.contains("/cover/") ||
+            urlLower.contains("/thumb/")
+}
+
 // ============================================================================
 // Enhanced WebView Component
 // ============================================================================
@@ -2864,10 +2894,6 @@ private fun EnhancedProviderWebView(
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
 
-                val cookieManager = CookieManager.getInstance()
-                cookieManager.setAcceptCookie(true)
-                cookieManager.setAcceptThirdPartyCookies(this, true)
-
                 settings.apply {
                     javaScriptEnabled = true
                     domStorageEnabled = true
@@ -2884,7 +2910,17 @@ private fun EnhancedProviderWebView(
                     mediaPlaybackRequiresUserGesture = false
                     allowFileAccess = true
                     allowContentAccess = true
+
+                    loadsImagesAutomatically = true
+                    blockNetworkImage = false
+                    blockNetworkLoads = false
                 }
+
+                val cookieManager = CookieManager.getInstance()
+                cookieManager.setAcceptCookie(true)
+                cookieManager.setAcceptThirdPartyCookies(this, true)
+
+                CookieManager.setAcceptFileSchemeCookies(true)
 
                 webViewClient = object : WebViewClient() {
                     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
@@ -2901,6 +2937,59 @@ private fun EnhancedProviderWebView(
                         view: WebView?,
                         request: WebResourceRequest?
                     ): Boolean = false
+
+                    // ← ADD THIS METHOD to intercept ALL resource requests (including images)
+                    override fun shouldInterceptRequest(
+                        view: WebView?,
+                        request: WebResourceRequest?
+                    ): WebResourceResponse? {
+                        val url = request?.url?.toString() ?: return null
+
+                        // Only intercept image requests from the same domain
+                        if (!isImageRequest(url)) {
+                            return null // Let WebView handle it normally
+                        }
+
+                        return try {
+                            val domain = CloudflareManager.getDomain(url)
+                            val cookies = CloudflareManager.getCookiesForDomain(domain)
+
+                            // Build request with proper headers
+                            val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                            connection.requestMethod = "GET"
+                            connection.setRequestProperty("User-Agent", userAgent)
+
+                            // Add Cloudflare cookies if available
+                            if (cookies.isNotBlank()) {
+                                connection.setRequestProperty("Cookie", cookies)
+                            }
+
+                            // Add standard headers
+                            connection.setRequestProperty("Accept", "image/webp,image/apng,image/*,*/*;q=0.8")
+                            connection.setRequestProperty("Referer", view?.url ?: url)
+
+                            connection.connect()
+
+                            val statusCode = connection.responseCode
+                            if (statusCode in 200..299) {
+                                val inputStream = connection.inputStream
+                                val contentType = connection.contentType ?: "image/jpeg"
+                                val encoding = connection.contentEncoding ?: "utf-8"
+
+                                WebResourceResponse(
+                                    contentType,
+                                    encoding,
+                                    inputStream
+                                )
+                            } else {
+                                android.util.Log.w("WebView", "Image request failed: $url (code: $statusCode)")
+                                null
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("WebView", "Failed to intercept image: $url", e)
+                            null // Let WebView try with default handling
+                        }
+                    }
                 }
 
                 webChromeClient = object : WebChromeClient() {
@@ -2912,6 +3001,15 @@ private fun EnhancedProviderWebView(
                     override fun onProgressChanged(view: WebView?, newProgress: Int) {
                         super.onProgressChanged(view, newProgress)
                         onProgressChanged(newProgress)
+
+                        // Flush cookies when page is fully loaded
+                        if (newProgress == 100 && view != null) {
+                            // Wait 1 second after page fully loads before flushing
+                            view.postDelayed({
+                                CloudflareManager.flushWebViewCookies()
+                                android.util.Log.d("WebView", "Cookies flushed at 100% progress")
+                            }, 1000)
+                        }
                     }
                 }
 
@@ -2930,42 +3028,59 @@ private fun EnhancedProviderWebView(
 private fun checkAndSaveCookies(
     url: String,
     domain: String,
+    scope: CoroutineScope,
     onCookiesSaved: () -> Unit,
     onCookieStatusUpdate: (CookieDisplayStatus) -> Unit
 ) {
     if (domain.isBlank()) return
 
-    try {
-        CloudflareManager.flushWebViewCookies()
-        val cookies = CloudflareManager.extractCookiesFromWebView(url)
+    // Update status to checking
+    onCookieStatusUpdate(CookieDisplayStatus.CHECKING)
 
-        if (cookies != null && cookies.contains("cf_clearance")) {
-            val existingCookies = CloudflareManager.getCookiesForDomain(domain)
-            val isNewOrUpdated = !existingCookies.contains("cf_clearance") ||
-                    CloudflareManager.areCookiesExpired(domain)
+    // Launch coroutine for async extraction with retry
+    scope.launch {
+        extractCookiesWithRetry(
+            url = url,
+            domain = domain,
+            maxAttempts = 5,
+            delayMs = 500L,
+            onSuccess = { cookies ->
+                // Check if this is a new/updated cookie
+                val existingCookies = CloudflareManager.getCookiesForDomain(domain)
+                val isNewOrUpdated = !existingCookies.contains("cf_clearance") ||
+                        CloudflareManager.areCookiesExpired(domain) ||
+                        CloudflareManager.areCookiesExpiringSoon(domain)
 
-            CloudflareManager.saveCookiesForDomain(
-                domain = domain,
-                cookies = cookies,
-                userAgent = CloudflareManager.WEBVIEW_USER_AGENT
-            )
+                // Save cookies
+                CloudflareManager.saveCookiesForDomain(
+                    domain = domain,
+                    cookies = cookies,
+                    userAgent = CloudflareManager.WEBVIEW_USER_AGENT
+                )
 
-            if (isNewOrUpdated) {
-                onCookiesSaved()
-            }
-            onCookieStatusUpdate(CookieDisplayStatus.VALID)
-        } else {
-            val status = CloudflareManager.getCookieStatus(url)
-            onCookieStatusUpdate(
-                when (status) {
-                    CloudflareManager.CookieStatus.VALID -> CookieDisplayStatus.VALID
-                    CloudflareManager.CookieStatus.EXPIRED -> CookieDisplayStatus.EXPIRED
-                    CloudflareManager.CookieStatus.NONE -> CookieDisplayStatus.NONE
+                // Re-inject into WebView immediately
+                CloudflareManager.injectCookiesIntoWebView(url)
+
+                android.util.Log.d("CookieSave", "✓ Saved cf_clearance for $domain")
+
+                if (isNewOrUpdated) {
+                    onCookiesSaved()
                 }
-            )
-        }
-    } catch (e: Exception) {
-        android.util.Log.e("ProviderWebView", "Error checking cookies", e)
+                onCookieStatusUpdate(CookieDisplayStatus.VALID)
+            },
+            onFailure = {
+                // No cf_clearance found, check existing cookies
+                val status = CloudflareManager.getCookieStatus(url)
+                onCookieStatusUpdate(
+                    when (status) {
+                        CloudflareManager.CookieStatus.VALID -> CookieDisplayStatus.VALID
+                        CloudflareManager.CookieStatus.EXPIRED -> CookieDisplayStatus.EXPIRED
+                        CloudflareManager.CookieStatus.NONE -> CookieDisplayStatus.NONE
+                    }
+                )
+                android.util.Log.d("CookieSave", "✗ No valid cf_clearance found for $domain")
+            }
+        )
     }
 }
 
@@ -2980,4 +3095,43 @@ private fun formatDisplayUrl(url: String): String {
         .removePrefix("www.")
         .take(50)
         .let { if (url.length > 50) "$it..." else it }
+}
+
+// ============================================================================
+// Cookie Extraction with Retry
+// ============================================================================
+
+/**
+ * Extract cookies with retry mechanism and proper timing
+ */
+private suspend fun extractCookiesWithRetry(
+    url: String,
+    domain: String,
+    maxAttempts: Int = 5,
+    delayMs: Long = 500L,
+    onSuccess: (String) -> Unit,
+    onFailure: () -> Unit
+) {
+    repeat(maxAttempts) { attempt ->
+        delay(delayMs * (attempt + 1)) // Incremental delay: 500ms, 1000ms, 1500ms...
+
+        CloudflareManager.flushWebViewCookies()
+        delay(200) // Additional delay after flush
+
+        val cookies = CloudflareManager.extractCookiesFromWebView(url)
+
+        if (!cookies.isNullOrBlank() && cookies.contains("cf_clearance")) {
+            // Validate cookie format
+            if (CloudflareManager.isValidCloudflareCookie(cookies)) {
+                android.util.Log.d("CookieExtract", "✓ Success on attempt ${attempt + 1}")
+                onSuccess(cookies)
+                return
+            }
+        }
+
+        android.util.Log.d("CookieExtract", "✗ Attempt ${attempt + 1}/$maxAttempts failed")
+    }
+
+    android.util.Log.w("CookieExtract", "All $maxAttempts attempts failed")
+    onFailure()
 }

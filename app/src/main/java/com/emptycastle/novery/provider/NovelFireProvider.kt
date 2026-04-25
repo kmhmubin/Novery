@@ -845,9 +845,9 @@ class NovelFireProvider : MainProvider() {
             views = views
         )
     }
-// ================================================================
-// LOAD CHAPTERS WITH DATES
-// ================================================================
+    // ================================================================
+    // LOAD CHAPTERS WITH DATES
+    // ================================================================
 
     /**
      * Load chapters using the AJAX endpoint which includes created_at dates
@@ -868,8 +868,11 @@ class NovelFireProvider : MainProvider() {
             val response = get(ajaxUrl)
             val responseText = response.text
 
-            if (responseText.contains("You are being rate limited")) {
-                throw Exception("NovelFire is rate limiting requests. Please try again later.")
+            if (responseText.contains("You are being rate limited") ||
+                responseText.contains("banned") ||
+                responseText.contains("Cloudflare")) {
+                // Rate limited, use HTML fallback
+                return loadChaptersFromHtml(novelSlug)
             }
 
             if (responseText.contains("Page Not Found 404")) {
@@ -884,7 +887,7 @@ class NovelFireProvider : MainProvider() {
                 return loadChaptersFromHtml(novelSlug)
             }
 
-            // If AJAX didn't return all chapters, fallback to HTML pagination
+            // If AJAX didn't return all chapters, use the smart HTML approach
             if (dataArray.length() < recordsTotal) {
                 return loadChaptersFromHtml(novelSlug)
             }
@@ -933,117 +936,134 @@ class NovelFireProvider : MainProvider() {
     }
 
     /**
-     * Load chapters from the /chapters page HTML with pagination support
-     * URL pattern: /book/{novel-slug}/chapters?page={n}
-     *
-     * Each page shows up to 100 chapters. Pagination links are in ul.pagination
+     * FIXED: Smart chapter loading - only makes 2 requests instead of 50!
+     * Uses QuickNovel's approach: check last page, extract total chapter count, generate all chapters.
      */
     private suspend fun loadChaptersFromHtml(novelSlug: String): List<Chapter> {
-        val allChapters = mutableListOf<Chapter>()
-        val seenUrls = mutableSetOf<String>()
-        var currentPage = 1
-        var hasMorePages = true
-        val maxPages = 50 // Safety limit to prevent infinite loops
+        try {
+            // Step 1: Load first page to check pagination
+            val firstPageUrl = "$mainUrl/book/$novelSlug/chapters"
+            val firstPageDoc = get(firstPageUrl).document
 
-        while (hasMorePages && currentPage <= maxPages) {
-            val chaptersUrl = if (currentPage == 1) {
-                "$mainUrl/book/$novelSlug/chapters"
-            } else {
-                "$mainUrl/book/$novelSlug/chapters?page=$currentPage"
-            }
+            // Step 2: Check if pagination exists
+            val pagination = firstPageDoc.selectFirst("div.pagenav div.pagination-container nav ul.pagination")
 
-            try {
-                val response = get(chaptersUrl)
-                val document = response.document
+            if (pagination != null) {
+                // Find the last page number
+                val pageItems = pagination.select("li")
+                // Second-to-last item is usually the last page number (last item is "next" arrow)
+                val lastPageElement = pageItems.getOrNull(pageItems.size - 2)
+                val lastPageNumber = lastPageElement?.text()?.toIntOrNull() ?: 1
 
-                // Select chapters from the chapter list
-                val chapterItems = document.select("ul.chapter-list li")
+                if (lastPageNumber > 1) {
+                    // Step 3: Load ONLY the last page to get total chapter count
+                    val lastPageUrl = "$mainUrl/book/$novelSlug/chapters?page=$lastPageNumber"
+                    val lastPageDoc = get(lastPageUrl).document
 
-                if (chapterItems.isEmpty()) {
-                    hasMorePages = false
-                    continue
-                }
+                    // Find the last chapter link
+                    val lastChapterLink = lastPageDoc.select("ul.chapter-list li a")
+                        .lastOrNull()?.attr("href") ?: ""
 
-                for (item in chapterItems) {
-                    val linkElement = item.selectFirstOrNull("a") ?: continue
-                    val href = linkElement.attrOrNull("href") ?: continue
+                    // Extract chapter number from URL (e.g., "/book/slug/chapter-2534")
+                    val totalChapters = Regex("chapter-(\\d+)").find(lastChapterLink)
+                        ?.groupValues?.getOrNull(1)?.toIntOrNull()
 
-                    // Skip if not a chapter link
-                    if (!href.contains("/chapter-")) continue
+                    if (totalChapters != null && totalChapters > 0) {
+                        // Step 4: Generate all chapters without making more requests!
+                        return (1..totalChapters).map { chapterNumber ->
+                            val chapterUrl = fixUrl("book/$novelSlug/chapter-$chapterNumber")
+                                ?: "$mainUrl/book/$novelSlug/chapter-$chapterNumber"
 
-                    // Get chapter title
-                    val titleAttr = linkElement.attrOrNull("title")
-                    val titleElement = item.selectFirstOrNull("strong.chapter-title")
-                    val chapterNoElement = item.selectFirstOrNull("span.chapter-no")
-
-                    val chapterTitle = titleAttr
-                        ?: titleElement?.textOrNull()?.trim()
-                        ?: linkElement.textOrNull()?.trim()
-                        ?: continue
-
-                    // Get chapter date from <time> element (prefer human-readable text like "11 months ago")
-                    val timeElement = item.selectFirstOrNull("time.chapter-update")
-                    var dateOfRelease = timeElement?.textOrNull()?.trim()
-
-                    // If no human-readable text, parse datetime attribute to relative time
-                    if (dateOfRelease.isNullOrBlank()) {
-                        val datetimeAttr = timeElement?.attrOrNull("datetime")
-                        dateOfRelease = datetimeAttr?.let { dt ->
-                            try {
-                                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
-                                val parsed = sdf.parse(dt)
-                                if (parsed != null) parsed.time.toRelativeTime() else dt
-                            } catch (e: Exception) {
-                                dt
-                            }
+                            Chapter(
+                                name = "Chapter $chapterNumber",
+                                url = chapterUrl,
+                                dateOfRelease = null
+                            )
                         }
                     }
+                }
+            }
 
-                    // Build the chapter name
-                    val chapterNo = chapterNoElement?.textOrNull()?.trim()
-                    val chapterName = if (!chapterNo.isNullOrBlank() &&
-                        !chapterTitle.startsWith("Chapter $chapterNo", ignoreCase = true)
-                    ) {
-                        "Chapter $chapterNo – $chapterTitle"
-                    } else {
-                        chapterTitle
-                    }
+            // Fallback: No pagination or single page - just parse first page
+            return parseChaptersFromSinglePage(firstPageDoc, novelSlug)
 
-                    val chapterUrl = fixUrl(deSlash(href.removePrefix(mainUrl).removePrefix("/")))
-                        ?: continue
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return emptyList()
+        }
+    }
 
-                    // Avoid duplicates
-                    if (seenUrls.add(chapterUrl)) {
-                        allChapters.add(
-                            Chapter(
-                                name = chapterName,
-                                url = chapterUrl,
-                                dateOfRelease = dateOfRelease
-                            )
-                        )
+    /**
+     * Parse chapters from a single page (for novels with < 100 chapters)
+     */
+    private fun parseChaptersFromSinglePage(document: Document, novelSlug: String): List<Chapter> {
+        val chapters = mutableListOf<Chapter>()
+        val seenUrls = mutableSetOf<String>()
+        val chapterItems = document.select("ul.chapter-list li")
+
+        for (item in chapterItems) {
+            val linkElement = item.selectFirstOrNull("a") ?: continue
+            val href = linkElement.attrOrNull("href") ?: continue
+
+            if (!href.contains("/chapter-")) continue
+
+            // Get chapter title
+            val titleAttr = linkElement.attrOrNull("title")
+            val titleElement = item.selectFirstOrNull("strong.chapter-title")
+            val chapterNoElement = item.selectFirstOrNull("span.chapter-no")
+
+            val chapterTitle = titleAttr
+                ?: titleElement?.textOrNull()?.trim()
+                ?: linkElement.textOrNull()?.trim()
+                ?: continue
+
+            // Get chapter date
+            val timeElement = item.selectFirstOrNull("time.chapter-update")
+            var dateOfRelease = timeElement?.textOrNull()?.trim()
+
+            if (dateOfRelease.isNullOrBlank()) {
+                val datetimeAttr = timeElement?.attrOrNull("datetime")
+                dateOfRelease = datetimeAttr?.let { dt ->
+                    try {
+                        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                        val parsed = sdf.parse(dt)
+                        if (parsed != null) parsed.time.toRelativeTime() else dt
+                    } catch (e: Exception) {
+                        dt
                     }
                 }
+            }
 
-                // Check if there's a next page by looking for the "next" pagination link
-                // The pagination structure: <li class="page-item"><a class="page-link" rel="next">›</a></li>
-                val nextPageLink = document.selectFirst("ul.pagination li.page-item a[rel=next]")
-                hasMorePages = nextPageLink != null
+            // Build chapter name
+            val chapterNo = chapterNoElement?.textOrNull()?.trim()
+            val chapterName = if (!chapterNo.isNullOrBlank() &&
+                !chapterTitle.startsWith("Chapter $chapterNo", ignoreCase = true)
+            ) {
+                "Chapter $chapterNo – $chapterTitle"
+            } else {
+                chapterTitle
+            }
 
-                currentPage++
+            val chapterUrl = fixUrl(deSlash(href.removePrefix(mainUrl).removePrefix("/")))
+                ?: continue
 
-            } catch (e: Exception) {
-                e.printStackTrace()
-                hasMorePages = false
+            if (seenUrls.add(chapterUrl)) {
+                chapters.add(
+                    Chapter(
+                        name = chapterName,
+                        url = chapterUrl,
+                        dateOfRelease = dateOfRelease
+                    )
+                )
             }
         }
 
-        // Sort by chapter number extracted from URL
-        allChapters.sortBy { chapter ->
+        chapters.sortBy { chapter ->
             Regex("chapter-(\\d+)").find(chapter.url)
                 ?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
         }
 
-        return allChapters
+        return chapters
     }
     // ================================================================
     // LOAD CHAPTER CONTENT
