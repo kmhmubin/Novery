@@ -15,6 +15,7 @@ import com.emptycastle.novery.epub.EpubExporter
 import com.emptycastle.novery.provider.MainProvider
 import com.emptycastle.novery.service.DownloadServiceManager
 import com.emptycastle.novery.service.DownloadState
+import com.emptycastle.novery.util.ImageUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -923,5 +924,92 @@ class DetailsViewModel : ViewModel() {
         )
 
         hideDownloadMenu()
+    }
+
+    // ================================================================
+    // CUSTOM COVER
+    // ================================================================
+
+    private val _showCoverOptions = MutableStateFlow(false)
+    val showCoverOptions: StateFlow<Boolean> = _showCoverOptions.asStateFlow()
+
+    fun showCoverOptions() {
+        _showCoverOptions.value = true
+    }
+
+    fun hideCoverOptions() {
+        _showCoverOptions.value = false
+    }
+
+    /**
+     * Update custom cover from image URI
+     */
+    fun updateCustomCover(context: Context, imageUri: Uri) {
+        val novelUrl = currentNovelUrl ?: return
+
+        viewModelScope.launch {
+            try {
+                // Save image to internal storage
+                val filePath = ImageUtils.saveImageToInternalStorage(context, imageUri, novelUrl)
+
+                if (filePath != null) {
+                    // Update all repositories
+                    libraryRepository.updateCustomCover(novelUrl, "file://$filePath")
+                    offlineRepository.updateCustomCover(novelUrl, "file://$filePath")
+                    historyRepository.updateCustomCover(novelUrl, "file://$filePath")
+
+                    // Refresh UI
+                    val details = _uiState.value.novelDetails
+                    if (details != null) {
+                        _uiState.update {
+                            it.copy(
+                                novelDetails = details.copy(posterUrl = "file://$filePath")
+                            )
+                        }
+                    }
+
+                    hideCoverOptions()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _uiState.update {
+                    it.copy(error = "Failed to update cover: ${e.message}")
+                }
+            }
+        }
+    }
+
+    /**
+     * Reset to original cover
+     */
+    fun resetToOriginalCover(context: Context) {
+        val novelUrl = currentNovelUrl ?: return
+
+        viewModelScope.launch {
+            try {
+                // Get current custom cover for deletion
+                val customCover = libraryRepository.getCustomCover(novelUrl)
+
+                // Reset to null in all repositories
+                libraryRepository.updateCustomCover(novelUrl, null)
+                offlineRepository.updateCustomCover(novelUrl, null)
+                historyRepository.updateCustomCover(novelUrl, null)
+
+                // Delete old custom cover file
+                if (customCover != null && customCover.startsWith("file://")) {
+                    ImageUtils.deleteCustomCover(
+                        context = context,
+                        filePath = customCover
+                    )
+                }
+
+                // Refresh from network to get original
+                refresh()
+
+                hideCoverOptions()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 }

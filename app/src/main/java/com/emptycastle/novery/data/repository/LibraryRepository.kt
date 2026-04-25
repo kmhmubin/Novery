@@ -487,4 +487,23 @@ class LibraryRepository(
             lastCheckedAt = lastCheckedAt
         )
     }
+
+    // ================================================================
+    // CUSTOM COVER
+    // ================================================================
+
+    /**
+     * Update custom cover for a novel across all cached data
+     * @param novelUrl The novel URL
+     * @param coverUrl The new cover URL (null to reset to original)
+     */
+    suspend fun updateCustomCover(novelUrl: String, coverUrl: String?) = withContext(Dispatchers.IO) {
+        libraryDao.updateCustomCover(novelUrl, coverUrl)
+        offlineDao.updateNovelDetailsCustomCover(novelUrl, coverUrl)
+        offlineDao.updateOfflineNovelCustomCover(novelUrl, coverUrl)
+    }
+
+    suspend fun getCustomCover(novelUrl: String): String? = withContext(Dispatchers.IO) {
+        libraryDao.getCustomCover(novelUrl)
+    }
 }
