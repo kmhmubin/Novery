@@ -1,7 +1,14 @@
 package com.emptycastle.novery.provider
 
 import com.emptycastle.novery.R
-import com.emptycastle.novery.domain.model.*
+import com.emptycastle.novery.domain.model.Chapter
+import com.emptycastle.novery.domain.model.FilterGroup
+import com.emptycastle.novery.domain.model.FilterOption
+import com.emptycastle.novery.domain.model.MainPageResult
+import com.emptycastle.novery.domain.model.Novel
+import com.emptycastle.novery.domain.model.NovelDetails
+import com.emptycastle.novery.domain.model.RepliesResult
+import com.emptycastle.novery.domain.model.UserReview
 import com.emptycastle.novery.util.HtmlUtils
 import com.emptycastle.novery.util.RatingUtils
 import org.json.JSONObject
@@ -144,6 +151,21 @@ class WebnovelProvider : MainProvider() {
         FilterOption("Translated", "1"),
         FilterOption("Original", "2"),
         FilterOption("MTL", "3"),
+    )
+
+    override val extraFilterGroups = listOf(
+        FilterGroup(
+            key = "status",
+            label = "Status",
+            options = statusFilters,
+            defaultValue = "0"
+        ),
+        FilterGroup(
+            key = "type",
+            label = "Content Type",
+            options = typeFilters,
+            defaultValue = "0"
+        )
     )
 
     // ================================================================
@@ -638,8 +660,22 @@ class WebnovelProvider : MainProvider() {
     // MAIN PAGE
     // ================================================================
 
-    override suspend fun loadMainPage(page: Int, orderBy: String?, tag: String?): MainPageResult {
-        val url = buildBrowseUrl(page = page, orderBy = orderBy, tag = tag)
+    override suspend fun loadMainPage(
+        page: Int,
+        orderBy: String?,
+        tag: String?,
+        extraFilters: Map<String, String>
+    ): MainPageResult {
+        val status = extraFilters["status"] ?: "0"
+        val type = extraFilters["type"] ?: "0"
+
+        val url = buildBrowseUrl(
+            page = page,
+            orderBy = orderBy,
+            tag = tag,
+            status = status,
+            type = type
+        )
 
         val response = get(url, customHeaders)
         val document = response.document
