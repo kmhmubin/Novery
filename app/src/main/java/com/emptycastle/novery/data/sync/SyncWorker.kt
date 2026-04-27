@@ -108,6 +108,16 @@ class SyncWorker(
         private const val MIN_TRIGGER_SYNC_INTERVAL_MINUTES = 15L
         private const val TAG_SYNC = "novery_sync"
         private const val KEY_TRIGGER = "trigger"
+        private val SUPPORTED_PERIODIC_INTERVALS = setOf(
+            30,
+            60,
+            180,
+            360,
+            720,
+            1440,
+            2880,
+            10080
+        )
 
         fun isRunning(context: Context): Boolean {
             val workManager = WorkManager.getInstance(context)
@@ -119,19 +129,23 @@ class SyncWorker(
             val prefs = PreferencesManager.getInstance(context)
             val settings = prefs.getSyncSettings()
             val workManager = WorkManager.getInstance(context)
+            val intervalMinutes = normalizedPeriodicInterval(settings.intervalMinutes)
 
-            if (settings.service == SyncServiceType.NONE ||
-                settings.intervalMinutes <= 0 ||
-                !settings.googleDriveSignedIn
-            ) {
+            if (settings.service == SyncServiceType.NONE || !settings.googleDriveSignedIn) {
+                workManager.cancelUniqueWork(UNIQUE_TRIGGER_WORK)
+                workManager.cancelUniqueWork(UNIQUE_PERIODIC_WORK)
+                return
+            }
+
+            if (intervalMinutes <= 0) {
                 workManager.cancelUniqueWork(UNIQUE_PERIODIC_WORK)
                 return
             }
 
             val request = PeriodicWorkRequestBuilder<SyncWorker>(
-                settings.intervalMinutes.toLong(),
+                intervalMinutes.toLong(),
                 TimeUnit.MINUTES,
-                periodicFlexMinutes(settings.intervalMinutes).toLong(),
+                periodicFlexMinutes(intervalMinutes).toLong(),
                 TimeUnit.MINUTES
             )
                 .setInputData(workDataOf(KEY_TRIGGER to SyncTrigger.AUTO.name))
@@ -142,7 +156,7 @@ class SyncWorker(
             workManager.enqueueUniquePeriodicWork(
                 UNIQUE_PERIODIC_WORK,
                 if (forceUpdate) {
-                    ExistingPeriodicWorkPolicy.UPDATE
+                    ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE
                 } else {
                     ExistingPeriodicWorkPolicy.KEEP
                 },
@@ -217,6 +231,14 @@ class SyncWorker(
 
         private fun periodicFlexMinutes(intervalMinutes: Int): Int {
             return intervalMinutes.coerceAtMost(10).coerceAtLeast(5)
+        }
+
+        private fun normalizedPeriodicInterval(intervalMinutes: Int): Int {
+            return if (SUPPORTED_PERIODIC_INTERVALS.contains(intervalMinutes)) {
+                intervalMinutes
+            } else {
+                0
+            }
         }
 
         private fun syncConstraints(): Constraints {
