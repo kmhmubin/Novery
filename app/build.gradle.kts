@@ -49,8 +49,6 @@ android {
         // Pick a compiler extension version compatible with your Compose UI / Material versions
         kotlinCompilerExtensionVersion = "1.5.3"
     }
-}
-
 dependencies {
     // Core Android
     implementation(libs.androidx.core.ktx)
@@ -115,6 +113,13 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    // Background sync
+    implementation("androidx.work:work-runtime-ktx:2.10.3")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // Google Drive sync
+    implementation("com.google.apis:google-api-services-drive:v3-rev20251210-2.0.0")
 
     // For MediaStyle notifications
     implementation("androidx.media:media:1.7.0")

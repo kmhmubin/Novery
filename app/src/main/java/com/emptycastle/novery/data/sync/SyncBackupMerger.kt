@@ -57,7 +57,7 @@ object SyncBackupMerger {
                     lastCheckedAt = entries.maxOf { it.lastCheckedAt },
                     lastUpdatedAt = entries.maxOf { it.lastUpdatedAt },
                     lastReadChapterIndex = entries.maxOf { it.lastReadChapterIndex },
-                    unreadChapterCount = entries.maxOf { it.unreadChapterCount }
+                    unreadChapterCount = newestRead.unreadChapterCount.coerceAtLeast(0)
                 )
             }
             .sortedByDescending { libraryTimestamp(it) }

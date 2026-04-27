@@ -63,7 +63,6 @@ class SyncManager(
 
             val mergedPayload = when {
                 remotePayload == null -> localPayload
-                remotePayload.deviceId == localPayload.deviceId -> localPayload
                 else -> {
                     SyncStatusTracker.update("Merging remote changes")
                     currentCoroutineContext().ensureActive()
@@ -79,7 +78,7 @@ class SyncManager(
             currentCoroutineContext().ensureActive()
             googleDriveSyncService.pushSyncPayload(mergedPayload)
 
-            if (remotePayload != null && remotePayload.deviceId != localPayload.deviceId) {
+            if (remotePayload != null) {
                 SyncStatusTracker.update("Applying merged data locally")
                 currentCoroutineContext().ensureActive()
                 val restoreResult = backupManager.restoreBackupData(
@@ -146,7 +145,7 @@ private fun SyncDataSelection.toRestoreOptions(): RestoreOptions {
         restoreHistory = syncHistory,
         restoreStatistics = syncStatistics,
         restoreSettings = syncSettings,
-        mergeWithExisting = false
+        mergeWithExisting = true
     )
 }
 

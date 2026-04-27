@@ -235,7 +235,8 @@ class GoogleDriveSyncService(
             .list()
             .setSpaces("appDataFolder")
             .setQ("name = '$REMOTE_FILE_NAME'")
-            .setFields("files(id, name, createdTime, appProperties)")
+            .setOrderBy("modifiedTime desc")
+            .setFields("files(id, name, createdTime, modifiedTime, appProperties)")
             .execute()
             .files
 

@@ -323,11 +323,8 @@ class BackupManager(
                             libraryDao.insert(entity)
                             libraryCount++
                         } else {
-                            // Optionally merge: keep newer data
-                            if ((entity.lastReadAt ?: 0) > (existing.lastReadAt ?: 0)) {
-                                libraryDao.insert(entity)
-                                libraryCount++
-                            }
+                            libraryDao.insert(existing.mergeForSync(entity))
+                            libraryCount++
                         }
                     } else {
                         libraryDao.insert(entity)
@@ -338,9 +335,18 @@ class BackupManager(
 
             // Restore bookmarks
             if (options.restoreBookmarks) {
+                val existingBookmarks = if (options.mergeWithExisting) {
+                    bookmarkDao.getAll().map { it.syncKey() }.toMutableSet()
+                } else {
+                    mutableSetOf()
+                }
+
                 backup.bookmarks.forEach { item ->
-                    bookmarkDao.insert(item.toEntity())
-                    bookmarkCount++
+                    val entity = item.toEntity()
+                    if (!options.mergeWithExisting || existingBookmarks.add(entity.syncKey())) {
+                        bookmarkDao.insert(entity)
+                        bookmarkCount++
+                    }
                 }
             }
 
@@ -630,6 +636,32 @@ private fun LibraryBackup.toEntity() = LibraryEntity(
     unreadChapterCount = unreadChapterCount
 )
 
+private fun LibraryEntity.mergeForSync(remote: LibraryEntity): LibraryEntity {
+    val localReadAt = lastReadAt ?: 0L
+    val remoteReadAt = remote.lastReadAt ?: 0L
+    val newestRead = if (remoteReadAt > localReadAt) remote else this
+    val newestMetadata = if (remote.lastUpdatedAt > lastUpdatedAt) remote else this
+
+    return newestMetadata.copy(
+        name = newestMetadata.name.ifBlank { newestRead.name },
+        posterUrl = newestMetadata.posterUrl ?: newestRead.posterUrl,
+        latestChapter = newestMetadata.latestChapter ?: newestRead.latestChapter,
+        addedAt = minOf(addedAt, remote.addedAt),
+        readingStatus = newestRead.readingStatus,
+        lastChapterUrl = newestRead.lastChapterUrl,
+        lastChapterName = newestRead.lastChapterName,
+        lastReadAt = newestRead.lastReadAt,
+        lastScrollIndex = newestRead.lastScrollIndex,
+        lastScrollOffset = newestRead.lastScrollOffset,
+        totalChapterCount = maxOf(totalChapterCount, remote.totalChapterCount),
+        acknowledgedChapterCount = maxOf(acknowledgedChapterCount, remote.acknowledgedChapterCount),
+        lastCheckedAt = maxOf(lastCheckedAt, remote.lastCheckedAt),
+        lastUpdatedAt = maxOf(lastUpdatedAt, remote.lastUpdatedAt),
+        lastReadChapterIndex = maxOf(lastReadChapterIndex, remote.lastReadChapterIndex),
+        unreadChapterCount = newestRead.unreadChapterCount.coerceAtLeast(0)
+    )
+}
+
 private fun BookmarkBackup.toEntity() = BookmarkEntity(
     novelUrl = novelUrl,
     novelName = novelName,
@@ -644,6 +676,20 @@ private fun BookmarkBackup.toEntity() = BookmarkEntity(
     createdAt = createdAt,
     updatedAt = updatedAt
 )
+
+private fun BookmarkEntity.syncKey(): String {
+    return buildString {
+        append(novelUrl)
+        append('|')
+        append(chapterUrl)
+        append('|')
+        append(segmentId ?: textSnippet.orEmpty())
+        append('|')
+        append(segmentIndex)
+        append('|')
+        append(category)
+    }
+}
 
 private fun HistoryBackup.toEntity() = HistoryEntity(
     novelUrl = novelUrl,
