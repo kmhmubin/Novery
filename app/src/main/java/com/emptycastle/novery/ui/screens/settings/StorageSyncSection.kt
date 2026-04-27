@@ -332,7 +332,7 @@ fun StorageSyncSection(
 
                             ToggleRow(
                                 title = "Chapter read",
-                                subtitle = "Sync after marking read",
+                                subtitle = "Queue after reading",
                                 checked = triggerOptions.syncOnChapterRead,
                                 onCheckedChange = {
                                     preferencesManager.updateSyncTriggerOptions(
@@ -342,7 +342,7 @@ fun StorageSyncSection(
                             )
                             ToggleRow(
                                 title = "Chapter open",
-                                subtitle = "Sync when reading starts",
+                                subtitle = "Queue after opening",
                                 checked = triggerOptions.syncOnChapterOpen,
                                 onCheckedChange = {
                                     preferencesManager.updateSyncTriggerOptions(

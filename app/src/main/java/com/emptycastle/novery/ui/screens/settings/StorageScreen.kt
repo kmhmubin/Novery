@@ -43,6 +43,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteSweep
@@ -298,7 +299,7 @@ fun StorageScreen(
             }
 
             item(key = "sync_header") {
-                SectionHeader(title = "Cloud Sync")
+                SectionHeader(title = "Cloud Sync", icon = Icons.Outlined.CloudSync)
             }
 
             item(key = "sync_card") {

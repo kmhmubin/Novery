@@ -42,6 +42,9 @@ class SyncWorker(
             ) {
                 return Result.success()
             }
+            if (isQueuedTrigger(trigger) && isInsideTriggerCooldown(preferencesManager)) {
+                return Result.success()
+            }
 
             if (preferencesManager.getSyncSettings().showProgressNotifications) {
                 setForeground(createForegroundInfo("Preparing sync"))
@@ -97,6 +100,9 @@ class SyncWorker(
     companion object {
         const val UNIQUE_PERIODIC_WORK = "novery_sync_periodic"
         const val UNIQUE_IMMEDIATE_WORK = "novery_sync_immediate"
+        const val UNIQUE_TRIGGER_WORK = "novery_sync_triggered"
+        private const val AUTO_TRIGGER_DELAY_MINUTES = 5L
+        private const val MIN_TRIGGER_SYNC_INTERVAL_MINUTES = 15L
         private const val TAG_SYNC = "novery_sync"
         private const val KEY_TRIGGER = "trigger"
 
@@ -141,15 +147,35 @@ class SyncWorker(
                 return
             }
 
+            if (trigger == SyncTrigger.MANUAL) {
+                val request = OneTimeWorkRequestBuilder<SyncWorker>()
+                    .setInputData(workDataOf(KEY_TRIGGER to trigger.name))
+                    .setConstraints(syncConstraints())
+                    .addTag(TAG_SYNC)
+                    .build()
+
+                WorkManager.getInstance(context).enqueueUniqueWork(
+                    UNIQUE_IMMEDIATE_WORK,
+                    ExistingWorkPolicy.REPLACE,
+                    request
+                )
+                return
+            }
+
+            if (isInsideTriggerCooldown(prefs)) {
+                return
+            }
+
             val request = OneTimeWorkRequestBuilder<SyncWorker>()
                 .setInputData(workDataOf(KEY_TRIGGER to trigger.name))
+                .setInitialDelay(AUTO_TRIGGER_DELAY_MINUTES, TimeUnit.MINUTES)
                 .setConstraints(syncConstraints())
                 .addTag(TAG_SYNC)
                 .build()
 
             WorkManager.getInstance(context).enqueueUniqueWork(
-                UNIQUE_IMMEDIATE_WORK,
-                ExistingWorkPolicy.REPLACE,
+                UNIQUE_TRIGGER_WORK,
+                ExistingWorkPolicy.KEEP,
                 request
             )
         }
@@ -157,7 +183,27 @@ class SyncWorker(
         fun cancel(context: Context) {
             val workManager = WorkManager.getInstance(context)
             workManager.cancelUniqueWork(UNIQUE_IMMEDIATE_WORK)
+            workManager.cancelUniqueWork(UNIQUE_TRIGGER_WORK)
             workManager.cancelUniqueWork(UNIQUE_PERIODIC_WORK)
+        }
+
+        private fun isInsideTriggerCooldown(preferencesManager: PreferencesManager): Boolean {
+            val lastSyncTimestamp = preferencesManager.getSyncSettings().lastSyncTimestamp
+            if (lastSyncTimestamp <= 0L) {
+                return false
+            }
+
+            val elapsedMinutes = TimeUnit.MILLISECONDS.toMinutes(
+                System.currentTimeMillis() - lastSyncTimestamp
+            )
+            return elapsedMinutes < MIN_TRIGGER_SYNC_INTERVAL_MINUTES
+        }
+
+        private fun isQueuedTrigger(trigger: SyncTrigger): Boolean {
+            return trigger == SyncTrigger.APP_START ||
+                    trigger == SyncTrigger.APP_RESUME ||
+                    trigger == SyncTrigger.CHAPTER_OPEN ||
+                    trigger == SyncTrigger.CHAPTER_READ
         }
 
         private fun syncConstraints(): Constraints {
