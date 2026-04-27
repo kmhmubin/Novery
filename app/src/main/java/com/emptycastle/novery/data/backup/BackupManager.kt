@@ -66,7 +66,8 @@ class BackupManager(
     /**
      * Create a complete backup of all app data
      */
-    suspend fun createBackup(): BackupData = withContext(Dispatchers.IO) {
+    suspend fun createBackup(selection: BackupSelection = BackupSelection()): BackupData =
+        withContext(Dispatchers.IO) {
         val libraryDao = database.libraryDao()
         val bookmarkDao = database.bookmarkDao()
         val historyDao = database.historyDao()
@@ -77,31 +78,71 @@ class BackupManager(
             createdAt = System.currentTimeMillis(),
             appVersion = getAppVersion(),
             deviceInfo = getDeviceInfo(),
-            library = libraryDao.getAll().map { it.toBackup() },
-            bookmarks = bookmarkDao.getAll().map { it.toBackup() },
-            history = historyDao.getAll().map { it.toBackup() },
-            readChapters = historyDao.getAllReadChapters().map { it.toBackup() },
-            readingStats = statsDao.getAllStats().map { it.toBackup() },
-            readingStreak = statsDao.getStreak()?.toBackup(),
-            appSettings = preferencesManager.appSettings.value.toBackup(),
-            readerSettings = preferencesManager.readerSettings.value.toBackup()
+            library = if (selection.includeLibrary) {
+                libraryDao.getAll().map { it.toBackup() }
+            } else {
+                emptyList()
+            },
+            bookmarks = if (selection.includeBookmarks) {
+                bookmarkDao.getAll().map { it.toBackup() }
+            } else {
+                emptyList()
+            },
+            history = if (selection.includeHistory) {
+                historyDao.getAll().map { it.toBackup() }
+            } else {
+                emptyList()
+            },
+            readChapters = if (selection.includeHistory) {
+                historyDao.getAllReadChapters().map { it.toBackup() }
+            } else {
+                emptyList()
+            },
+            readingStats = if (selection.includeStatistics) {
+                statsDao.getAllStats().map { it.toBackup() }
+            } else {
+                emptyList()
+            },
+            readingStreak = if (selection.includeStatistics) {
+                statsDao.getStreak()?.toBackup()
+            } else {
+                null
+            },
+            appSettings = if (selection.includeSettings) {
+                preferencesManager.appSettings.value.toBackup(
+                    preferencesManager.getAppSettingsUpdatedAt()
+                )
+            } else {
+                null
+            },
+            readerSettings = if (selection.includeSettings) {
+                preferencesManager.readerSettings.value.toBackup(
+                    preferencesManager.getReaderSettingsUpdatedAt()
+                )
+            } else {
+                null
+            }
         )
     }
 
     /**
      * Export backup to JSON string
      */
-    suspend fun exportToJson(): String = withContext(Dispatchers.IO) {
-        val backup = createBackup()
+    suspend fun exportToJson(selection: BackupSelection = BackupSelection()): String =
+        withContext(Dispatchers.IO) {
+        val backup = createBackup(selection)
         json.encodeToString(backup)
     }
 
     /**
      * Export backup to a URI (file)
      */
-    suspend fun exportToUri(uri: Uri): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun exportToUri(
+        uri: Uri,
+        selection: BackupSelection = BackupSelection()
+    ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val backupJson = exportToJson()
+            val backupJson = exportToJson(selection)
             context.contentResolver.openOutputStream(uri)?.use { outputStream ->
                 outputStream.write(backupJson.toByteArray(Charsets.UTF_8))
             } ?: return@withContext Result.failure(Exception("Could not open output stream"))
@@ -210,7 +251,7 @@ class BackupManager(
                 )
             }
 
-            restoreBackup(backup, options)
+            restoreBackupData(backup, options)
         } catch (e: Exception) {
             RestoreResult(
                 success = false,
@@ -232,7 +273,7 @@ class BackupManager(
             } else {
                 json.decodeFromString<BackupData>(backupJson)
             }
-            restoreBackup(backup, options)
+            restoreBackupData(backup, options)
         } catch (e: Exception) {
             RestoreResult(
                 success = false,
@@ -241,7 +282,7 @@ class BackupManager(
         }
     }
 
-    private suspend fun restoreBackup(
+    suspend fun restoreBackupData(
         backup: BackupData,
         options: RestoreOptions
     ): RestoreResult {
@@ -264,10 +305,7 @@ class BackupManager(
                 if (options.restoreBookmarks) bookmarkDao.deleteAll()
                 if (options.restoreHistory) {
                     historyDao.deleteAll()
-                    // Clear all read chapters - need to iterate through novels
-                    libraryDao.getAll().forEach {
-                        historyDao.clearReadChapters(it.url)
-                    }
+                    historyDao.clearAllReadChapters()
                 }
                 if (options.restoreStatistics) {
                     statsDao.deleteAllStats()
@@ -484,7 +522,8 @@ private fun ReadingStreakEntity.toBackup() = ReadingStreakBackup(
     updatedAt = updatedAt
 )
 
-private fun AppSettings.toBackup() = AppSettingsBackup(
+private fun AppSettings.toBackup(updatedAt: Long) = AppSettingsBackup(
+    updatedAt = updatedAt,
     themeMode = themeMode.name,
     amoledBlack = amoledBlack,
     useDynamicColor = useDynamicColor,
@@ -517,7 +556,8 @@ private fun AppSettings.toBackup() = AppSettingsBackup(
     disabledProviders = disabledProviders.toList()
 )
 
-private fun ReaderSettings.toBackup() = ReaderSettingsBackup(
+private fun ReaderSettings.toBackup(updatedAt: Long) = ReaderSettingsBackup(
+    updatedAt = updatedAt,
     fontSize = fontSize,
     lineHeight = lineHeight,
     fontFamily = fontFamily.id,
