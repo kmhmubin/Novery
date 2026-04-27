@@ -92,7 +92,7 @@ fun StorageSyncSection(
                     onClick = {
                         showDisconnectDialog = false
                         googleDriveSync.clearLocalAccount()
-                        SyncWorker.schedule(context)
+                        SyncWorker.schedule(context, forceUpdate = true)
                     }
                 ) {
                     Text("Disconnect")
@@ -210,7 +210,7 @@ fun StorageSyncSection(
                                     onClick = {
                                         showServiceMenu = false
                                         preferencesManager.setSyncService(service)
-                                        SyncWorker.schedule(context)
+                                        SyncWorker.schedule(context, forceUpdate = true)
                                     },
                                     trailingIcon = if (service == syncSettings.service) {
                                         {
@@ -296,7 +296,7 @@ fun StorageSyncSection(
                                             onClick = {
                                                 showIntervalMenu = false
                                                 preferencesManager.setSyncIntervalMinutes(option.minutes)
-                                                SyncWorker.schedule(context)
+                                                SyncWorker.schedule(context, forceUpdate = true)
                                             },
                                             trailingIcon = if (option.minutes == syncSettings.intervalMinutes) {
                                                 {

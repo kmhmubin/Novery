@@ -51,7 +51,7 @@ class GoogleDriveLoginActivity : ComponentActivity() {
                         googleDriveSyncService.handleAuthorizationCode(code)
                     }.onSuccess {
                         googleDriveSyncService.clearPendingAuthState()
-                        SyncWorker.schedule(this@GoogleDriveLoginActivity)
+                        SyncWorker.schedule(this@GoogleDriveLoginActivity, forceUpdate = true)
                         Toast.makeText(
                             this@GoogleDriveLoginActivity,
                             "Google Drive connected",

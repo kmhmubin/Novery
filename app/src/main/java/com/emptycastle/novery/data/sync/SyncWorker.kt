@@ -56,6 +56,9 @@ class SyncWorker(
                         if (preferencesManager.getSyncSettings().showProgressNotifications) {
                             notifier.showSuccess(message)
                         }
+                        if (trigger == SyncTrigger.MANUAL) {
+                            schedule(applicationContext, forceUpdate = true)
+                        }
                         Result.success()
                     },
                     onFailure = { error ->
@@ -112,7 +115,7 @@ class SyncWorker(
             return workInfos.any { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED }
         }
 
-        fun schedule(context: Context) {
+        fun schedule(context: Context, forceUpdate: Boolean = false) {
             val prefs = PreferencesManager.getInstance(context)
             val settings = prefs.getSyncSettings()
             val workManager = WorkManager.getInstance(context)
@@ -127,6 +130,8 @@ class SyncWorker(
 
             val request = PeriodicWorkRequestBuilder<SyncWorker>(
                 settings.intervalMinutes.toLong(),
+                TimeUnit.MINUTES,
+                periodicFlexMinutes(settings.intervalMinutes).toLong(),
                 TimeUnit.MINUTES
             )
                 .setInputData(workDataOf(KEY_TRIGGER to SyncTrigger.AUTO.name))
@@ -136,7 +141,11 @@ class SyncWorker(
 
             workManager.enqueueUniquePeriodicWork(
                 UNIQUE_PERIODIC_WORK,
-                ExistingPeriodicWorkPolicy.UPDATE,
+                if (forceUpdate) {
+                    ExistingPeriodicWorkPolicy.UPDATE
+                } else {
+                    ExistingPeriodicWorkPolicy.KEEP
+                },
                 request
             )
         }
@@ -204,6 +213,10 @@ class SyncWorker(
                     trigger == SyncTrigger.APP_RESUME ||
                     trigger == SyncTrigger.CHAPTER_OPEN ||
                     trigger == SyncTrigger.CHAPTER_READ
+        }
+
+        private fun periodicFlexMinutes(intervalMinutes: Int): Int {
+            return intervalMinutes.coerceAtMost(10).coerceAtLeast(5)
         }
 
         private fun syncConstraints(): Constraints {
