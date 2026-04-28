@@ -36,7 +36,7 @@ class SyncNotifier(
             )
             .build()
 
-        NotificationManagerCompat.from(context).notify(NotificationHelper.NOTIFICATION_ID_SYNC, notification)
+        notify(notification)
         return notification
     }
 
@@ -51,7 +51,7 @@ class SyncNotifier(
             .setAutoCancel(true)
             .build()
 
-        NotificationManagerCompat.from(context).notify(NotificationHelper.NOTIFICATION_ID_SYNC, notification)
+        notify(notification)
     }
 
     fun showError(message: String) {
@@ -65,11 +65,19 @@ class SyncNotifier(
             .setAutoCancel(true)
             .build()
 
-        NotificationManagerCompat.from(context).notify(NotificationHelper.NOTIFICATION_ID_SYNC, notification)
+        notify(notification)
     }
 
     fun clear() {
-        NotificationManagerCompat.from(context).cancel(NotificationHelper.NOTIFICATION_ID_SYNC)
+        runCatching {
+            NotificationManagerCompat.from(context).cancel(NotificationHelper.NOTIFICATION_ID_SYNC)
+        }
+    }
+
+    private fun notify(notification: Notification) {
+        runCatching {
+            NotificationManagerCompat.from(context).notify(NotificationHelper.NOTIFICATION_ID_SYNC, notification)
+        }
     }
 
     private fun contentIntent(): PendingIntent {

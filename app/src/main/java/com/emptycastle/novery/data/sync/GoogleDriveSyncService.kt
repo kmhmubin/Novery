@@ -23,6 +23,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.ByteArrayOutputStream
 import java.io.FileNotFoundException
+import java.net.URI
 import java.util.UUID
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
@@ -69,7 +70,7 @@ class GoogleDriveSyncService(
             NetHttpTransport(),
             GsonFactory.getDefaultInstance(),
             secrets.installed.clientId,
-            secrets.installed.clientSecret,
+            secrets.installed.clientSecret.orEmpty(),
             code,
             REDIRECT_URI
         ).setGrantType("authorization_code").execute()
@@ -215,10 +216,16 @@ class GoogleDriveSyncService(
 
     private fun buildUserCredentials(accessToken: String, refreshToken: String): UserCredentials {
         val secrets = loadClientSecrets()
+        val clientId = secrets.installed.clientId.orEmpty()
+        if (clientId.isBlank()) {
+            throw IllegalStateException("Google Drive OAuth client ID is missing.")
+        }
+
         val builder = UserCredentials.newBuilder()
-            .setClientId(secrets.installed.clientId)
-            .setClientSecret(secrets.installed.clientSecret)
+            .setClientId(clientId)
+            .setClientSecret(secrets.installed.clientSecret.orEmpty())
             .setRefreshToken(refreshToken)
+            .setTokenServerUri(GOOGLE_TOKEN_SERVER_URI)
 
         if (accessToken.isNotBlank()) {
             builder.setAccessToken(AccessToken(accessToken, null))
@@ -294,6 +301,7 @@ class GoogleDriveSyncService(
     companion object {
         const val CLIENT_SECRETS_FILE = "client_secrets.json"
         const val REDIRECT_URI = "com.emptycastle.novery.google.oauth:/oauth2redirect"
+        val GOOGLE_TOKEN_SERVER_URI: URI = URI.create("https://oauth2.googleapis.com/token")
         private const val REMOTE_FILE_NAME = "Novery_sync.json.gz"
         private const val GZIP_MIME_TYPE = "application/gzip"
     }

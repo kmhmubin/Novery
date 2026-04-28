@@ -51,14 +51,17 @@ class SyncWorker(
                 return Result.success()
             }
 
-            if (preferencesManager.getSyncSettings().showProgressNotifications) {
+            val showNotifications = preferencesManager.getSyncSettings().showProgressNotifications
+            val useForeground = trigger == SyncTrigger.MANUAL && showNotifications
+
+            if (useForeground) {
                 setForeground(createForegroundInfo("Preparing sync"))
             }
 
             SyncManager(applicationContext).sync(trigger)
                 .fold(
                     onSuccess = { message ->
-                        if (preferencesManager.getSyncSettings().showProgressNotifications) {
+                        if (showNotifications) {
                             notifier.showSuccess(message)
                         }
                         if (trigger == SyncTrigger.MANUAL) {
@@ -67,7 +70,7 @@ class SyncWorker(
                         Result.success()
                     },
                     onFailure = { error ->
-                        if (preferencesManager.getSyncSettings().showProgressNotifications) {
+                        if (showNotifications) {
                             notifier.showError(error.message ?: "Sync failed.")
                         }
                         Result.failure()
@@ -75,7 +78,9 @@ class SyncWorker(
                 )
         } catch (_: CancellationException) {
             SyncStatusTracker.finishCancelled()
-            if (preferencesManager.getSyncSettings().showProgressNotifications) {
+            if (inputData.getString(KEY_TRIGGER) == SyncTrigger.MANUAL.name &&
+                preferencesManager.getSyncSettings().showProgressNotifications
+            ) {
                 notifier.clear()
             }
             Result.success()
