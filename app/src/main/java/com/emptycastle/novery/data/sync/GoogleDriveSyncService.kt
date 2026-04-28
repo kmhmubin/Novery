@@ -8,7 +8,6 @@ import com.google.api.client.auth.oauth2.TokenResponseException
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeTokenRequest
 import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets
-import com.google.api.client.googleapis.auth.oauth2.GoogleCredential
 import com.google.api.client.googleapis.auth.oauth2.GoogleTokenResponse
 import com.google.api.client.http.ByteArrayContent
 import com.google.api.client.http.javanet.NetHttpTransport
@@ -16,6 +15,9 @@ import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.DriveScopes
 import com.google.api.services.drive.model.File
+import com.google.auth.http.HttpCredentialsAdapter
+import com.google.auth.oauth2.AccessToken
+import com.google.auth.oauth2.UserCredentials
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -179,24 +181,19 @@ class GoogleDriveSyncService(
             throw IllegalStateException("Google Drive is not signed in.")
         }
 
-        val secrets = loadClientSecrets()
-        val credential = GoogleCredential.Builder()
-            .setJsonFactory(GsonFactory.getDefaultInstance())
-            .setTransport(NetHttpTransport())
-            .setClientSecrets(secrets)
-            .build()
-
-        credential.refreshToken = refreshToken
-
         try {
-            credential.refreshToken()
-            val accessToken = credential.accessToken.orEmpty()
+            val credentials = buildUserCredentials(
+                accessToken = preferencesManager.getGoogleDriveAccessToken(),
+                refreshToken = refreshToken
+            )
+            val refreshedToken = credentials.refreshAccessToken()
+            val accessToken = refreshedToken.tokenValue.orEmpty()
             if (accessToken.isBlank()) {
                 throw IllegalStateException("Google Drive did not return a refreshed access token.")
             }
 
-            preferencesManager.setGoogleDriveTokens(accessToken, credential.refreshToken.orEmpty())
-            setupDriveService(accessToken, credential.refreshToken.orEmpty())
+            preferencesManager.setGoogleDriveTokens(accessToken, credentials.refreshToken.orEmpty())
+            setupDriveService(accessToken, credentials.refreshToken.orEmpty())
         } catch (error: TokenResponseException) {
             if (error.details?.error == "invalid_grant") {
                 clearLocalAccount()
@@ -206,23 +203,28 @@ class GoogleDriveSyncService(
     }
 
     private fun setupDriveService(accessToken: String, refreshToken: String) {
-        val secrets = loadClientSecrets()
-        val credential = GoogleCredential.Builder()
-            .setJsonFactory(GsonFactory.getDefaultInstance())
-            .setTransport(NetHttpTransport())
-            .setClientSecrets(secrets)
-            .build()
-            .apply {
-                this.accessToken = accessToken
-                this.refreshToken = refreshToken
-            }
+        val credentials = buildUserCredentials(accessToken, refreshToken)
 
         driveService = Drive.Builder(
             NetHttpTransport(),
             GsonFactory.getDefaultInstance(),
-            credential
+            HttpCredentialsAdapter(credentials)
         ).setApplicationName("Novery")
             .build()
+    }
+
+    private fun buildUserCredentials(accessToken: String, refreshToken: String): UserCredentials {
+        val secrets = loadClientSecrets()
+        val builder = UserCredentials.newBuilder()
+            .setClientId(secrets.installed.clientId)
+            .setClientSecret(secrets.installed.clientSecret)
+            .setRefreshToken(refreshToken)
+
+        if (accessToken.isNotBlank()) {
+            builder.setAccessToken(AccessToken(accessToken, null))
+        }
+
+        return builder.build()
     }
 
     private fun requireDriveService(): Drive {
