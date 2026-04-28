@@ -1362,6 +1362,10 @@ class PreferencesManager(context: Context) {
 
     fun getSyncSettings(): SyncSettings = _syncSettings.value
 
+    fun refreshSyncSettings() {
+        _syncSettings.value = loadSyncSettings()
+    }
+
     fun updateSyncSettings(settings: SyncSettings) {
         prefs.edit().apply {
             putString(KEY_SYNC_SERVICE, settings.service.name)

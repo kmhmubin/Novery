@@ -30,6 +30,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +42,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.emptycastle.novery.data.local.PreferencesManager
 import com.emptycastle.novery.data.sync.SyncManager
@@ -60,6 +64,7 @@ fun StorageSyncSection(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val syncSettings by preferencesManager.syncSettings.collectAsStateWithLifecycle()
     val syncSelection by preferencesManager.syncDataSelection.collectAsStateWithLifecycle()
@@ -71,6 +76,18 @@ fun StorageSyncSection(
     var showIntervalMenu by remember { mutableStateOf(false) }
     var showDisconnectDialog by remember { mutableStateOf(false) }
     var showPurgeDialog by remember { mutableStateOf(false) }
+
+    DisposableEffect(lifecycleOwner, preferencesManager) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                preferencesManager.refreshSyncSettings()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     val isGoogleDriveConfigured = googleDriveSync.isConfigured()
     val statusText = remember(syncState.isRunning, syncState.stage, syncState.lastError, syncState.lastMessage) {
