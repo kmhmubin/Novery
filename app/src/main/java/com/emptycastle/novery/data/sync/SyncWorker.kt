@@ -162,7 +162,7 @@ class SyncWorker(
                 TimeUnit.MINUTES
             )
                 .setInputData(workDataOf(KEY_TRIGGER to SyncTrigger.AUTO.name))
-                .setConstraints(syncConstraints())
+                .setConstraints(syncConstraints(requireBatteryNotLow = true))
                 .addTag(TAG_SYNC)
                 .build()
 
@@ -179,6 +179,7 @@ class SyncWorker(
 
         fun triggerNow(context: Context, trigger: SyncTrigger) {
             val prefs = PreferencesManager.getInstance(context)
+            prefs.refreshSyncSettings()
             if (!SyncManager.shouldTriggerSync(prefs, trigger)) {
                 return
             }
@@ -186,7 +187,7 @@ class SyncWorker(
             if (trigger == SyncTrigger.MANUAL) {
                 val request = OneTimeWorkRequestBuilder<SyncWorker>()
                     .setInputData(workDataOf(KEY_TRIGGER to trigger.name))
-                    .setConstraints(syncConstraints())
+                    .setConstraints(syncConstraints(requireBatteryNotLow = false))
                     .addTag(TAG_SYNC)
                     .build()
 
@@ -205,7 +206,7 @@ class SyncWorker(
             val request = OneTimeWorkRequestBuilder<SyncWorker>()
                 .setInputData(workDataOf(KEY_TRIGGER to trigger.name))
                 .setInitialDelay(AUTO_TRIGGER_DELAY_MINUTES, TimeUnit.MINUTES)
-                .setConstraints(syncConstraints())
+                .setConstraints(syncConstraints(requireBatteryNotLow = true))
                 .addTag(TAG_SYNC)
                 .build()
 
@@ -254,10 +255,15 @@ class SyncWorker(
             }
         }
 
-        private fun syncConstraints(): Constraints {
-            return Constraints.Builder()
+        private fun syncConstraints(requireBatteryNotLow: Boolean): Constraints {
+            val builder = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build()
+
+            if (requireBatteryNotLow) {
+                builder.setRequiresBatteryNotLow(true)
+            }
+
+            return builder.build()
         }
 
         private fun WorkInfo.isActiveSyncWork(): Boolean {

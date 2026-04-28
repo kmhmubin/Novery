@@ -48,7 +48,7 @@ object RepositoryProvider {
             database = NovelDatabase.getInstance(context)
         }
         if (preferencesManager == null) {
-            preferencesManager = PreferencesManager(context)
+            preferencesManager = PreferencesManager.getInstance(context)
         }
         notificationRepository = NotificationRepository(context)
     }

@@ -1464,7 +1464,7 @@ class PreferencesManager(context: Context) {
             putLong(KEY_SYNC_SETTINGS_UPDATED_AT, System.currentTimeMillis())
             apply()
         }
-        _syncSettings.value = _syncSettings.value.copy(googleDriveSignedIn = true)
+        refreshSyncSettings()
     }
 
     fun clearGoogleDriveTokens() {
@@ -1479,7 +1479,7 @@ class PreferencesManager(context: Context) {
             putLong(KEY_SYNC_SETTINGS_UPDATED_AT, System.currentTimeMillis())
             apply()
         }
-        _syncSettings.value = _syncSettings.value.copy(googleDriveSignedIn = false)
+        refreshSyncSettings()
     }
 
     fun hasGoogleDriveTokens(): Boolean {

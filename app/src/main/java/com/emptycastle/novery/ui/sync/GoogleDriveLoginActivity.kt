@@ -35,7 +35,7 @@ class GoogleDriveLoginActivity : ComponentActivity() {
 
         when {
             code != null -> {
-                if (expectedState.isNotBlank() && returnedState != expectedState) {
+                if (expectedState.isBlank() || returnedState != expectedState) {
                     googleDriveSyncService.clearPendingAuthState()
                     Toast.makeText(
                         this@GoogleDriveLoginActivity,

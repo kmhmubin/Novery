@@ -100,7 +100,6 @@ class GoogleDriveSyncService(
     }
 
     suspend fun pushSyncPayload(payload: SyncPayload) = withContext(Dispatchers.IO) {
-        refreshToken()
         val drive = requireDriveService()
         val remoteFiles = getRemoteFiles(drive)
         val existingFile = remoteFiles.firstOrNull()
