@@ -62,7 +62,7 @@ class GoogleDriveLoginActivity : ComponentActivity() {
                         googleDriveSyncService.clearPendingAuthState()
                         Toast.makeText(
                             this@GoogleDriveLoginActivity,
-                            authError.message ?: "Google Drive sign-in failed",
+                            authError.safeSignInMessage(),
                             Toast.LENGTH_LONG
                         ).show()
                         finish()
@@ -72,7 +72,7 @@ class GoogleDriveLoginActivity : ComponentActivity() {
 
             error != null -> {
                 googleDriveSyncService.clearPendingAuthState()
-                Toast.makeText(this, error, Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Google Drive sign-in was cancelled.", Toast.LENGTH_LONG).show()
                 finish()
             }
 
@@ -80,6 +80,14 @@ class GoogleDriveLoginActivity : ComponentActivity() {
                 googleDriveSyncService.clearPendingAuthState()
                 finish()
             }
+        }
+    }
+
+    private fun Throwable.safeSignInMessage(): String {
+        return if (message?.contains("not configured", ignoreCase = true) == true) {
+            "Google Drive setup is missing for this build."
+        } else {
+            "Google Drive sign-in failed. Try again."
         }
     }
 }

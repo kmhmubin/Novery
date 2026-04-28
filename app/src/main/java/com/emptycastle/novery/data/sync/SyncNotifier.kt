@@ -26,6 +26,8 @@ class SyncNotifier(
             .setOngoing(true)
             .setProgress(0, 0, true)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setShowWhen(false)
             .addAction(
                 R.drawable.ic_notification_cancel,
@@ -44,6 +46,8 @@ class SyncNotifier(
             .setContentTitle("Sync complete")
             .setContentText(message)
             .setContentIntent(contentIntent())
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setAutoCancel(true)
             .build()
 
@@ -56,6 +60,8 @@ class SyncNotifier(
             .setContentTitle("Sync failed")
             .setContentText(message)
             .setContentIntent(contentIntent())
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setAutoCancel(true)
             .build()
 

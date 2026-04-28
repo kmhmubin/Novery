@@ -19,6 +19,7 @@ import androidx.work.workDataOf
 import com.emptycastle.novery.data.local.PreferencesManager
 import com.emptycastle.novery.service.NotificationHelper
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
 import java.util.concurrent.TimeUnit
 
 /**
@@ -32,6 +33,10 @@ class SyncWorker(
     private val notifier = SyncNotifier(applicationContext)
 
     override suspend fun doWork(): Result {
+        if (!syncMutex.tryLock()) {
+            return Result.success()
+        }
+
         return try {
             val trigger = inputData.getString(KEY_TRIGGER)
                 ?.let { runCatching { SyncTrigger.valueOf(it) }.getOrNull() }
@@ -80,6 +85,8 @@ class SyncWorker(
                 notifier.showError(error.message ?: "Sync failed.")
             }
             Result.failure()
+        } finally {
+            syncMutex.unlock()
         }
     }
 
@@ -104,10 +111,11 @@ class SyncWorker(
         const val UNIQUE_PERIODIC_WORK = "novery_sync_periodic"
         const val UNIQUE_IMMEDIATE_WORK = "novery_sync_immediate"
         const val UNIQUE_TRIGGER_WORK = "novery_sync_triggered"
+        const val TAG_SYNC = "novery_sync"
         private const val AUTO_TRIGGER_DELAY_MINUTES = 5L
         private const val MIN_TRIGGER_SYNC_INTERVAL_MINUTES = 15L
-        private const val TAG_SYNC = "novery_sync"
         private const val KEY_TRIGGER = "trigger"
+        private val syncMutex = Mutex()
         private val SUPPORTED_PERIODIC_INTERVALS = setOf(
             30,
             60,
@@ -122,7 +130,7 @@ class SyncWorker(
         fun isRunning(context: Context): Boolean {
             val workManager = WorkManager.getInstance(context)
             val workInfos = workManager.getWorkInfosByTag(TAG_SYNC).get()
-            return workInfos.any { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED }
+            return workInfos.any { it.isActiveSyncWork() }
         }
 
         fun schedule(context: Context, forceUpdate: Boolean = false) {
@@ -179,7 +187,7 @@ class SyncWorker(
 
                 WorkManager.getInstance(context).enqueueUniqueWork(
                     UNIQUE_IMMEDIATE_WORK,
-                    ExistingWorkPolicy.REPLACE,
+                    ExistingWorkPolicy.KEEP,
                     request
                 )
                 return
@@ -245,6 +253,10 @@ class SyncWorker(
             return Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
+        }
+
+        private fun WorkInfo.isActiveSyncWork(): Boolean {
+            return state == WorkInfo.State.RUNNING || state == WorkInfo.State.ENQUEUED
         }
     }
 }

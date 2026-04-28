@@ -6,8 +6,10 @@ import com.emptycastle.novery.data.backup.BackupSelection
 import com.emptycastle.novery.data.backup.RestoreOptions
 import com.emptycastle.novery.data.local.NovelDatabase
 import com.emptycastle.novery.data.local.PreferencesManager
+import com.google.api.client.auth.oauth2.TokenResponseException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import java.io.IOException
 
 /**
  * Creates local sync payloads, reconciles remote data, and applies merged results.
@@ -97,8 +99,9 @@ class SyncManager(
             SyncStatusTracker.finishSuccess(message)
             Result.success(message)
         } catch (error: Exception) {
-            SyncStatusTracker.finishError(error.message ?: "Sync failed.")
-            Result.failure(error)
+            val safeMessage = error.toSyncMessage()
+            SyncStatusTracker.finishError(safeMessage)
+            Result.failure(IllegalStateException(safeMessage, error))
         }
     }
 
@@ -125,6 +128,21 @@ class SyncManager(
                 SyncTrigger.CHAPTER_READ -> preferencesManager.getSyncTriggerOptions().syncOnChapterRead
             }
         }
+    }
+}
+
+private fun Throwable.toSyncMessage(): String {
+    return when (this) {
+        is TokenResponseException -> {
+            if (details?.error == "invalid_grant") {
+                "Google Drive sign-in expired. Connect again."
+            } else {
+                "Google Drive authorization failed."
+            }
+        }
+        is IOException -> "Network error while syncing. Try again later."
+        is IllegalStateException -> message ?: "Sync failed."
+        else -> "Sync failed. Try again later."
     }
 }
 

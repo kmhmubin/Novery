@@ -370,7 +370,13 @@ class BackupManager(
             // Restore statistics
             if (options.restoreStatistics) {
                 backup.readingStats.forEach { item ->
-                    statsDao.insertStats(item.toEntity())
+                    val entity = item.toEntity()
+                    val existing = if (options.mergeWithExisting) {
+                        statsDao.getStatsForNovelDay(entity.novelUrl, entity.date)
+                    } else {
+                        null
+                    }
+                    statsDao.insertStats(existing?.mergeForSync(entity) ?: entity)
                     statsCount++
                 }
                 backup.readingStreak?.let { streak ->
@@ -719,6 +725,19 @@ private fun ReadingStatsBackup.toEntity() = ReadingStatsEntity(
     createdAt = createdAt,
     updatedAt = updatedAt
 )
+
+private fun ReadingStatsEntity.mergeForSync(remote: ReadingStatsEntity): ReadingStatsEntity {
+    return copy(
+        novelName = if (remote.updatedAt >= updatedAt) remote.novelName else novelName,
+        readingTimeSeconds = maxOf(readingTimeSeconds, remote.readingTimeSeconds),
+        chaptersRead = maxOf(chaptersRead, remote.chaptersRead),
+        wordsRead = maxOf(wordsRead, remote.wordsRead),
+        sessionsCount = maxOf(sessionsCount, remote.sessionsCount),
+        longestSessionSeconds = maxOf(longestSessionSeconds, remote.longestSessionSeconds),
+        createdAt = minOf(createdAt, remote.createdAt),
+        updatedAt = maxOf(updatedAt, remote.updatedAt)
+    )
+}
 
 private fun ReadingStreakBackup.toEntity() = ReadingStreakEntity(
     currentStreak = currentStreak,

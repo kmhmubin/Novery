@@ -10,7 +10,7 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeToken
 import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets
 import com.google.api.client.googleapis.auth.oauth2.GoogleCredential
 import com.google.api.client.googleapis.auth.oauth2.GoogleTokenResponse
-import com.google.api.client.http.InputStreamContent
+import com.google.api.client.http.ByteArrayContent
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
@@ -19,9 +19,8 @@ import com.google.api.services.drive.model.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import java.io.ByteArrayOutputStream
 import java.io.FileNotFoundException
-import java.io.PipedInputStream
-import java.io.PipedOutputStream
 import java.util.UUID
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
@@ -100,44 +99,44 @@ class GoogleDriveSyncService(
     suspend fun pushSyncPayload(payload: SyncPayload) = withContext(Dispatchers.IO) {
         refreshToken()
         val drive = requireDriveService()
-        val existingFile = getRemoteFile(drive)
-        val payloadBytes = json.encodeToString(SyncPayload.serializer(), payload)
-            .toByteArray(Charsets.UTF_8)
+        val remoteFiles = getRemoteFiles(drive)
+        val existingFile = remoteFiles.firstOrNull()
+        val payloadBytes = gzip(json.encodeToString(SyncPayload.serializer(), payload))
+        val media = ByteArrayContent(GZIP_MIME_TYPE, payloadBytes)
+        val metadata = File().apply {
+            name = REMOTE_FILE_NAME
+            mimeType = GZIP_MIME_TYPE
+            appProperties = mapOf("deviceId" to payload.deviceId)
+        }
 
-        PipedOutputStream().use { output ->
-            PipedInputStream(output).use { input ->
-                val writer = Thread {
-                    GZIPOutputStream(output).use { gzip ->
-                        gzip.write(payloadBytes)
-                    }
-                }
-                writer.start()
+        if (existingFile != null) {
+            drive.files().update(existingFile.id, metadata, media)
+                .setFields("id, modifiedTime")
+                .execute()
+        } else {
+            metadata.parents = listOf("appDataFolder")
+            drive.files().create(metadata, media)
+                .setFields("id, modifiedTime")
+                .execute()
+        }
 
-                val media = InputStreamContent(GZIP_MIME_TYPE, input)
-                val metadata = File().apply {
-                    name = REMOTE_FILE_NAME
-                    mimeType = GZIP_MIME_TYPE
-                    appProperties = mapOf("deviceId" to payload.deviceId)
-                }
-
-                if (existingFile != null) {
-                    drive.files().update(existingFile.id, metadata, media).execute()
-                } else {
-                    metadata.parents = listOf("appDataFolder")
-                    drive.files().create(metadata, media).setFields("id").execute()
-                }
-
-                writer.join()
-            }
+        remoteFiles.drop(1).forEach { duplicate ->
+            runCatching { drive.files().delete(duplicate.id).execute() }
         }
     }
 
     suspend fun purgeRemotePayload(): Boolean = withContext(Dispatchers.IO) {
         refreshToken()
         val drive = requireDriveService()
-        val existingFile = getRemoteFile(drive) ?: return@withContext false
-        drive.files().delete(existingFile.id).execute()
-        true
+        val remoteFiles = getRemoteFiles(drive)
+        if (remoteFiles.isEmpty()) {
+            return@withContext false
+        }
+
+        remoteFiles.forEach { file ->
+            drive.files().delete(file.id).execute()
+        }
+        return@withContext true
     }
 
     fun clearLocalAccount() {
@@ -231,7 +230,11 @@ class GoogleDriveSyncService(
     }
 
     private fun getRemoteFile(drive: Drive): File? {
-        val files = drive.files()
+        return getRemoteFiles(drive).firstOrNull()
+    }
+
+    private fun getRemoteFiles(drive: Drive): List<File> {
+        return drive.files()
             .list()
             .setSpaces("appDataFolder")
             .setQ("name = '$REMOTE_FILE_NAME'")
@@ -239,8 +242,7 @@ class GoogleDriveSyncService(
             .setFields("files(id, name, createdTime, modifiedTime, appProperties)")
             .execute()
             .files
-
-        return files.firstOrNull()
+            .orEmpty()
     }
 
     private fun buildAuthorizationFlow(): GoogleAuthorizationCodeFlow {
@@ -249,7 +251,7 @@ class GoogleDriveSyncService(
             NetHttpTransport(),
             GsonFactory.getDefaultInstance(),
             secrets,
-            listOf(DriveScopes.DRIVE_FILE, DriveScopes.DRIVE_APPDATA)
+            listOf(DriveScopes.DRIVE_APPDATA)
         ).setAccessType("offline")
             .build()
     }
@@ -261,6 +263,14 @@ class GoogleDriveSyncService(
             .setState(state)
             .setApprovalPrompt("force")
             .build()
+    }
+
+    private fun gzip(bytes: String): ByteArray {
+        val output = ByteArrayOutputStream()
+        GZIPOutputStream(output).use { gzip ->
+            gzip.write(bytes.toByteArray(Charsets.UTF_8))
+        }
+        return output.toByteArray()
     }
 
     private fun loadClientSecrets(): GoogleClientSecrets {
