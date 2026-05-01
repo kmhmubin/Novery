@@ -191,4 +191,12 @@ interface LibraryDao {
         ORDER BY lastReadAt DESC, addedAt DESC
     """)
     suspend fun search(query: String): List<LibraryEntity>
+
+    // ============ CUSTOM COVER ============
+
+    @Query("UPDATE library SET customCoverUrl = :coverUrl WHERE url = :novelUrl")
+    suspend fun updateCustomCover(novelUrl: String, coverUrl: String?)
+
+    @Query("SELECT customCoverUrl FROM library WHERE url = :novelUrl")
+    suspend fun getCustomCover(novelUrl: String): String?
 }

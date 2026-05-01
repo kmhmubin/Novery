@@ -49,6 +49,8 @@ android {
         // Pick a compiler extension version compatible with your Compose UI / Material versions
         kotlinCompilerExtensionVersion = "1.5.3"
     }
+}
+
 dependencies {
     // Core Android
     implementation(libs.androidx.core.ktx)
