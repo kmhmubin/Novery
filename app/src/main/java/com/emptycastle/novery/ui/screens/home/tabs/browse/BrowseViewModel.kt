@@ -71,13 +71,9 @@ class BrowseViewModel : ViewModel() {
             launch {
                 // Keep source-specific library URLs in memory so search cards can mark only the
                 // saved result from the same source without per-card database queries.
-                libraryRepository.observeLibrary().collect { libraryItems ->
+                libraryRepository.observeLibraryUrls().collect { libraryNovelUrls ->
                     _uiState.update {
-                        it.copy(
-                            libraryNovelUrls = libraryItems.mapTo(mutableSetOf()) { item ->
-                                item.novel.url
-                            }
-                        )
+                        it.copy(libraryNovelUrls = libraryNovelUrls)
                     }
                 }
             }
